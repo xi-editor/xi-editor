@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::delta::{self, Delta};
-use crate::interval::Interval;
-use crate::multiset::{Subset, SubsetBuilder};
-use crate::rope::{Rope, RopeInfo};
+use crate::{
+    delta::{Delta, DeltaBuilder},
+    multiset::{Subset, SubsetBuilder},
+    rope::{Rope, RopeInfo},
+};
 
 /// Creates a `Subset` of `s` by scanning through `substr` and finding which
 /// characters of `s` are missing from it in order. Returns a `Subset` which
@@ -63,7 +64,11 @@ pub fn parse_subset(s: &str) -> Subset {
 }
 
 pub fn parse_subset_list(s: &str) -> Vec<Subset> {
-    s.lines().map(|s| s.trim()).filter(|s| !s.is_empty()).map(parse_subset).collect()
+    s.lines()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(parse_subset)
+        .collect()
 }
 
 pub fn debug_subsets(subsets: &[Subset]) {
@@ -74,18 +79,18 @@ pub fn debug_subsets(subsets: &[Subset]) {
 
 pub fn parse_delta(s: &str) -> Delta<RopeInfo> {
     let base_len = s.chars().filter(|c| *c == '-' || *c == '!').count();
-    let mut b = delta::Builder::new(base_len);
+    let mut b = DeltaBuilder::new(base_len);
 
     let mut i = 0;
     for c in s.chars() {
         if c == '-' {
             i += 1;
         } else if c == '!' {
-            b.delete(Interval::new(i, i + 1));
+            b.delete(i..i + 1);
             i += 1;
         } else {
             let inserted = format!("{}", c);
-            b.replace(Interval::new(i, i), Rope::from(inserted));
+            b.replace(i..i, Rope::from(inserted));
         }
     }
 

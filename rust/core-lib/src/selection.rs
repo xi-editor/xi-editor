@@ -14,15 +14,18 @@
 
 //! Data structures representing (multiple) selections and cursors.
 
-use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Deref;
+use std::{
+    cmp::{max, min},
+    ops::Range,
+};
 
 use crate::annotations::{AnnotationRange, AnnotationSlice, AnnotationType, ToAnnotation};
 use crate::index_set::remove_n_at;
 use crate::line_offset::LineOffset;
 use crate::view::View;
-use xi_rope::{Interval, Rope, RopeDelta, Transformer};
+use xi_rope::{interval::IntervalBounds, Rope, RopeDelta, Transformer};
 
 /// A type representing horizontal measurements. This is currently in units
 /// that are not very well defined except that ASCII characters count as
@@ -58,7 +61,9 @@ impl Selection {
 
     /// Creates a selection with a single region.
     pub fn new_simple(region: SelRegion) -> Selection {
-        Selection { regions: vec![region] }
+        Selection {
+            regions: vec![region],
+        }
     }
 
     /// Clear the selection.
@@ -228,15 +233,20 @@ impl Selection {
 
 /// Implementing the `ToAnnotation` trait allows to convert selections to annotations.
 impl ToAnnotation for Selection {
-    fn get_annotations(&self, interval: Interval, view: &View, text: &Rope) -> AnnotationSlice {
-        let regions = self.regions_in_range(interval.start(), interval.end());
+    fn get_annotations(&self, interval: Range<usize>, view: &View, text: &Rope) -> AnnotationSlice {
+        let regions = self.regions_in_range(interval.start, interval.end);
         let ranges = regions
             .iter()
             .map(|region| {
                 let (start_line, start_col) = view.offset_to_line_col(text, region.min());
                 let (end_line, end_col) = view.offset_to_line_col(text, region.max());
 
-                AnnotationRange { start_line, start_col, end_line, end_col }
+                AnnotationRange {
+                    start_line,
+                    start_col,
+                    end_line,
+                    end_col,
+                }
             })
             .collect::<Vec<AnnotationRange>>();
         AnnotationSlice::new(AnnotationType::Selection, ranges, None)
@@ -298,12 +308,22 @@ pub struct SelRegion {
 impl SelRegion {
     /// Returns a new region.
     pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end, horiz: None, affinity: Affinity::default() }
+        Self {
+            start,
+            end,
+            horiz: None,
+            affinity: Affinity::default(),
+        }
     }
 
     /// Returns a new caret region (`start == end`).
     pub fn caret(pos: usize) -> Self {
-        Self { start: pos, end: pos, horiz: None, affinity: Affinity::default() }
+        Self {
+            start: pos,
+            end: pos,
+            horiz: None,
+            affinity: Affinity::default(),
+        }
     }
 
     /// Returns a region with the given horizontal position.
@@ -349,22 +369,32 @@ impl SelRegion {
         let is_forward = self.end >= self.start;
         let new_min = min(self.min(), other.min());
         let new_max = max(self.max(), other.max());
-        let (start, end) = if is_forward { (new_min, new_max) } else { (new_max, new_min) };
+        let (start, end) = if is_forward {
+            (new_min, new_max)
+        } else {
+            (new_max, new_min)
+        };
         // Could try to preserve horiz/affinity from one of the
         // sources, but very likely not worth it.
         SelRegion::new(start, end)
     }
 }
 
-impl<'a> From<&'a SelRegion> for Interval {
-    fn from(src: &'a SelRegion) -> Interval {
-        Interval::new(src.min(), src.max())
+impl<'a> From<&'a SelRegion> for Range<usize> {
+    fn from(src: &'a SelRegion) -> Range<usize> {
+        src.min()..src.max()
     }
 }
 
-impl From<Interval> for SelRegion {
-    fn from(src: Interval) -> SelRegion {
+impl From<Range<usize>> for SelRegion {
+    fn from(src: Range<usize>) -> SelRegion {
         SelRegion::new(src.start, src.end)
+    }
+}
+
+impl IntervalBounds for &SelRegion {
+    fn into_interval(self, _upper_bound: usize) -> Range<usize> {
+        self.min()..self.max()
     }
 }
 
@@ -406,7 +436,7 @@ impl fmt::Display for SelRegion {
 mod tests {
     use super::{InsertDrift, SelRegion, Selection};
     use std::ops::Deref;
-    use xi_rope::{DeltaBuilder, Interval};
+    use xi_rope::DeltaBuilder;
 
     fn r(start: usize, end: usize) -> SelRegion {
         SelRegion::new(start, end)
@@ -565,7 +595,7 @@ mod tests {
         // like "texthere!" -> "text here!"
         // the space should be outside the selections
         let mut builder = DeltaBuilder::new("texthere!".len());
-        builder.replace(Interval::new(4, 4), " ".into());
+        builder.replace(4..4, " ".into());
         let s2 = s.apply_delta(&builder.build(), true, InsertDrift::Outside);
 
         assert_eq!(s2.deref(), &[r(0, 4), r(5, 9)]);
@@ -581,8 +611,8 @@ mod tests {
         // like "abc" -> "abbbc"
         // if b was selected at beginning, inside edit should cause all bs to be selected after
         let mut builder = DeltaBuilder::new("abc".len());
-        builder.replace(Interval::new(1, 1), "b".into());
-        builder.replace(Interval::new(2, 2), "b".into());
+        builder.replace(1..1, "b".into());
+        builder.replace(2..2, "b".into());
         let s2 = s.apply_delta(&builder.build(), true, InsertDrift::Inside);
 
         assert_eq!(s2.deref(), &[r(1, 4)]);
@@ -595,12 +625,12 @@ mod tests {
         assert_eq!(s.deref(), &[r(1, 1)]);
 
         let mut builder = DeltaBuilder::new("ab".len());
-        builder.replace(Interval::new(1, 1), "b".into());
+        builder.replace(1..1, "b".into());
         let s2 = s.apply_delta(&builder.build(), true, InsertDrift::Inside);
         assert_eq!(s2.deref(), &[r(2, 2)]);
 
         let mut builder = DeltaBuilder::new("ab".len());
-        builder.replace(Interval::new(1, 1), "b".into());
+        builder.replace(1..1, "b".into());
         let s3 = s.apply_delta(&builder.build(), false, InsertDrift::Inside);
         assert_eq!(s3.deref(), &[r(1, 1)]);
     }

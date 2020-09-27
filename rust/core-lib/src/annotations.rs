@@ -18,13 +18,13 @@ use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, SerializeSeq, Serializer};
 use serde_json::{self, Value};
 
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 use crate::line_offset::LineOffset;
 use crate::plugins::PluginId;
 use crate::view::View;
 use crate::xi_rope::spans::Spans;
-use crate::xi_rope::{Interval, Rope};
+use crate::xi_rope::Rope;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AnnotationType {
@@ -72,7 +72,9 @@ impl<'de> Deserialize<'de> for AnnotationRange {
     where
         D: Deserializer<'de>,
     {
-        let mut range = AnnotationRange { ..Default::default() };
+        let mut range = AnnotationRange {
+            ..Default::default()
+        };
         let seq = <[usize; 4]>::deserialize(deserializer)?;
 
         range.start_line = seq[0];
@@ -93,12 +95,12 @@ pub struct Annotations {
 
 impl Annotations {
     /// Update the annotations in `interval` with the provided `items`.
-    pub fn update(&mut self, interval: Interval, items: Spans<Value>) {
+    pub fn update(&mut self, interval: Range<usize>, items: Spans<Value>) {
         self.items.edit(interval, items);
     }
 
     /// Remove annotations intersecting `interval`.
-    pub fn invalidate(&mut self, interval: Interval) {
+    pub fn invalidate(&mut self, interval: Range<usize>) {
         self.items.delete_after(interval);
     }
 }
@@ -119,7 +121,11 @@ impl AnnotationSlice {
         ranges: Vec<AnnotationRange>,
         payloads: Option<Vec<Value>>,
     ) -> Self {
-        AnnotationSlice { annotation_type, ranges, payloads }
+        AnnotationSlice {
+            annotation_type,
+            ranges,
+            payloads,
+        }
     }
 
     /// Returns json representation.
@@ -137,7 +143,7 @@ impl AnnotationSlice {
 /// in core but are presented to the frontend as annotations.
 pub trait ToAnnotation {
     /// Returns annotations that overlap the provided interval.
-    fn get_annotations(&self, interval: Interval, view: &View, text: &Rope) -> AnnotationSlice;
+    fn get_annotations(&self, interval: Range<usize>, view: &View, text: &Rope) -> AnnotationSlice;
 }
 
 /// All the annotations for a given view
@@ -147,28 +153,31 @@ pub struct AnnotationStore {
 
 impl AnnotationStore {
     pub fn new() -> Self {
-        AnnotationStore { store: HashMap::new() }
+        AnnotationStore {
+            store: HashMap::new(),
+        }
     }
 
     /// Invalidates and removes all annotations in the range of the interval.
-    pub fn invalidate(&mut self, interval: Interval) {
+    pub fn invalidate(&mut self, interval: Range<usize>) {
         self.store
             .values_mut()
             .map(|v| v.iter_mut())
             .flatten()
-            .for_each(|a| a.invalidate(interval));
+            .for_each(|a| a.invalidate(interval.clone()));
     }
 
     /// Applies an update from a plugin to a set of annotations
-    pub fn update(&mut self, source: PluginId, interval: Interval, item: Annotations) {
+    pub fn update(&mut self, source: PluginId, interval: Range<usize>, item: Annotations) {
         if !self.store.contains_key(&source) {
             self.store.insert(source, vec![item]);
             return;
         }
 
         let entry = self.store.get_mut(&source).unwrap();
-        if let Some(annotation) =
-            entry.iter_mut().find(|a| a.annotation_type == item.annotation_type)
+        if let Some(annotation) = entry
+            .iter_mut()
+            .find(|a| a.annotation_type == item.annotation_type)
         {
             annotation.update(interval, item.items);
         } else {
@@ -182,7 +191,7 @@ impl AnnotationStore {
         &'c self,
         view: &'c View,
         text: &'c Rope,
-        interval: Interval,
+        interval: &'c Range<usize>,
     ) -> impl Iterator<Item = AnnotationSlice> + 'c {
         self.store.iter().flat_map(move |(_plugin, value)| {
             value.iter().map(move |annotation| {
@@ -190,19 +199,24 @@ impl AnnotationStore {
                 let payloads = annotation
                     .items
                     .iter()
-                    .filter(|(i, _p)| i.start() <= interval.end() && i.end() >= interval.start())
-                    .map(|(_i, p)| p.clone())
+                    .filter(|span| span.iv.start <= interval.end && span.iv.end >= interval.start)
+                    .map(|span| span.data.clone())
                     .collect::<Vec<Value>>();
 
                 let ranges = annotation
                     .items
                     .iter()
-                    .filter(|(i, _p)| i.start() <= interval.end() && i.end() >= interval.start())
-                    .map(|(i, _p)| {
-                        let (start_line, start_col) = view.offset_to_line_col(text, i.start());
-                        let (end_line, end_col) = view.offset_to_line_col(text, i.end());
+                    .filter(|span| span.iv.start <= interval.end && span.iv.end >= interval.start)
+                    .map(|span| {
+                        let (start_line, start_col) = view.offset_to_line_col(text, span.iv.start);
+                        let (end_line, end_col) = view.offset_to_line_col(text, span.iv.end);
 
-                        AnnotationRange { start_line, start_col, end_line, end_col }
+                        AnnotationRange {
+                            start_line,
+                            start_col,
+                            end_line,
+                            end_col,
+                        }
                     })
                     .collect::<Vec<AnnotationRange>>();
 
@@ -223,13 +237,20 @@ impl AnnotationStore {
 
 #[cfg(test)]
 mod tests {
+    use xi_rope::spans::Span;
+
     use super::*;
     use crate::plugins::PluginPid;
     use crate::xi_rope::spans::SpansBuilder;
 
     #[test]
     fn test_annotation_range_serialization() {
-        let range = AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 };
+        let range = AnnotationRange {
+            start_line: 1,
+            start_col: 3,
+            end_line: 4,
+            end_col: 1,
+        };
 
         assert_eq!(json!(range).to_string(), "[1,3,4,1]")
     }
@@ -237,12 +258,25 @@ mod tests {
     #[test]
     fn test_annotation_range_deserialization() {
         let range: AnnotationRange = serde_json::from_str("[1,3,4,1]").unwrap();
-        assert_eq!(range, AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 })
+        assert_eq!(
+            range,
+            AnnotationRange {
+                start_line: 1,
+                start_col: 3,
+                end_line: 4,
+                end_col: 1
+            }
+        )
     }
 
     #[test]
     fn test_annotation_slice_json() {
-        let range = AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 };
+        let range = AnnotationRange {
+            start_line: 1,
+            start_col: 3,
+            end_line: 4,
+            end_col: 1,
+        };
 
         let slice = AnnotationSlice {
             annotation_type: AnnotationType::Find,
@@ -261,25 +295,31 @@ mod tests {
         let mut store = AnnotationStore::new();
 
         let mut sb = SpansBuilder::new(10);
-        sb.add_span(Interval::new(1, 5), json!(null));
+        sb.add(Span::new(1..5, json!(null)));
 
         assert_eq!(store.store.len(), 0);
 
         store.update(
             PluginPid(1),
-            Interval::new(1, 5),
-            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
+            1..5,
+            Annotations {
+                annotation_type: AnnotationType::Find,
+                items: sb.build(),
+            },
         );
 
         assert_eq!(store.store.len(), 1);
 
         sb = SpansBuilder::new(10);
-        sb.add_span(Interval::new(6, 8), json!(null));
+        sb.add(Span::new(6..8, json!(null)));
 
         store.update(
             PluginPid(2),
-            Interval::new(6, 8),
-            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
+            6..8,
+            Annotations {
+                annotation_type: AnnotationType::Find,
+                items: sb.build(),
+            },
         );
 
         assert_eq!(store.store.len(), 2);
@@ -290,25 +330,31 @@ mod tests {
         let mut store = AnnotationStore::new();
 
         let mut sb = SpansBuilder::new(10);
-        sb.add_span(Interval::new(1, 5), json!(null));
+        sb.add(Span::new(1..5, json!(null)));
 
         assert_eq!(store.store.len(), 0);
 
         store.update(
             PluginPid(1),
-            Interval::new(1, 5),
-            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
+            1..5,
+            Annotations {
+                annotation_type: AnnotationType::Find,
+                items: sb.build(),
+            },
         );
 
         assert_eq!(store.store.len(), 1);
 
         sb = SpansBuilder::new(10);
-        sb.add_span(Interval::new(6, 8), json!(null));
+        sb.add(Span::new(6..8, json!(null)));
 
         store.update(
             PluginPid(2),
-            Interval::new(6, 8),
-            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
+            6..8,
+            Annotations {
+                annotation_type: AnnotationType::Find,
+                items: sb.build(),
+            },
         );
 
         assert_eq!(store.store.len(), 2);

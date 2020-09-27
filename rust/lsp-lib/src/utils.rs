@@ -37,13 +37,13 @@ pub fn get_document_content_changes<C: Cache>(
 ) -> Result<Vec<TextDocumentContentChangeEvent>, PluginLibError> {
     if let Some(delta) = delta {
         let (interval, _) = delta.summary();
-        let (start, end) = interval.start_end();
+        let (start, end) = (interval.start, interval.end);
 
         // TODO: Handle more trivial cases like typing when there's a selection or transpose
         if let Some(node) = delta.as_simple_insert() {
             let text = String::from(node);
 
-            let (start, end) = interval.start_end();
+            let (start, end) = (interval.start, interval.end);
             let text_document_content_change_event = TextDocumentContentChangeEvent {
                 range: Some(Range {
                     start: get_position_of_offset(view, start)?,

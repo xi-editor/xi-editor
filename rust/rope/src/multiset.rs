@@ -14,13 +14,7 @@
 
 //! A data structure for representing multi-subsets of sequences (typically strings).
 
-use std::cmp;
-
-// These two imports are for the `apply` method only.
-use crate::interval::Interval;
-use crate::tree::{Node, NodeInfo, TreeBuilder};
-use std::fmt;
-use std::slice;
+use std::{cmp, fmt, ops::Range, slice};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -50,7 +44,7 @@ pub struct SubsetBuilder {
 }
 
 impl SubsetBuilder {
-    pub fn new() -> SubsetBuilder {
+    pub fn new() -> Self {
         SubsetBuilder::default()
     }
 
@@ -67,7 +61,10 @@ impl SubsetBuilder {
     /// non-empty range with `begin` not before the largest range or segment added
     /// so far. Gaps will be filled with a 0-count segment.
     pub fn add_range(&mut self, begin: usize, end: usize, count: usize) {
-        assert!(begin >= self.total_len, "ranges must be added in non-decreasing order");
+        assert!(
+            begin >= self.total_len,
+            "ranges must be added in non-decreasing order"
+        );
         // assert!(begin < end, "ranges added must be non-empty: [{},{})", begin, end);
         if begin >= end {
             return;
@@ -101,7 +98,9 @@ impl SubsetBuilder {
     }
 
     pub fn build(self) -> Subset {
-        Subset { segments: self.segments }
+        Subset {
+            segments: self.segments,
+        }
     }
 }
 
@@ -126,30 +125,29 @@ impl CountMatcher {
 
 impl Subset {
     /// Creates an empty `Subset` of a string of length `len`
-    pub fn new(len: usize) -> Subset {
+    pub fn new(len: usize) -> Self {
         let mut sb = SubsetBuilder::new();
         sb.pad_to_len(len);
         sb.build()
     }
 
-    /// Mostly for testing.
+    // Mostly for testing.
+    #[cfg(test)]
     pub fn delete_from_string(&self, s: &str) -> String {
         let mut result = String::new();
-        for (b, e) in self.range_iter(CountMatcher::Zero) {
-            result.push_str(&s[b..e]);
+        for r in self.range_iter(CountMatcher::Zero) {
+            result.push_str(&s[r]);
         }
         result
     }
 
-    // Maybe Subset should be a pure data structure and this method should
-    // be a method of Node.
-    /// Builds a version of `s` with all the elements in this `Subset` deleted from it.
-    pub fn delete_from<N: NodeInfo>(&self, s: &Node<N>) -> Node<N> {
-        let mut b = TreeBuilder::new();
-        for (beg, end) in self.range_iter(CountMatcher::Zero) {
-            s.push_subseq(&mut b, Interval::new(beg, end));
-        }
-        b.build()
+    /// Count the total length of all the segments matching `matcher`.
+    pub fn count(&self, matcher: CountMatcher) -> usize {
+        self.segments
+            .iter()
+            .filter(|&seg| matcher.matches(seg))
+            .map(|seg| seg.len)
+            .sum()
     }
 
     /// The length of the resulting sequence after deleting this subset. A
@@ -160,11 +158,6 @@ impl Subset {
     /// `self.delete_from_string(s).len() = self.len(s.len())`
     pub fn len_after_delete(&self) -> usize {
         self.count(CountMatcher::Zero)
-    }
-
-    /// Count the total length of all the segments matching `matcher`.
-    pub fn count(&self, matcher: CountMatcher) -> usize {
-        self.segments.iter().filter(|seg| matcher.matches(seg)).map(|seg| seg.len).sum()
     }
 
     /// Convenience alias for `self.count(CountMatcher::All)`
@@ -180,7 +173,7 @@ impl Subset {
 
     /// Compute the union of two subsets. The count of an element in the
     /// result is the sum of the counts in the inputs.
-    pub fn union(&self, other: &Subset) -> Subset {
+    pub fn union(&self, other: &Self) -> Self {
         let mut sb = SubsetBuilder::new();
         for zseg in self.zip(other) {
             sb.push_segment(zseg.len, zseg.a_count + zseg.b_count);
@@ -190,7 +183,7 @@ impl Subset {
 
     /// Compute the difference of two subsets. The count of an element in the
     /// result is the subtraction of the counts of other from self.
-    pub fn subtract(&self, other: &Subset) -> Subset {
+    pub fn subtract(&self, other: &Self) -> Self {
         let mut sb = SubsetBuilder::new();
         for zseg in self.zip(other) {
             assert!(
@@ -210,7 +203,7 @@ impl Subset {
     ///
     /// This works like set symmetric difference when all counts are 0 or 1
     /// but it extends nicely to the case of larger counts.
-    pub fn bitxor(&self, other: &Subset) -> Subset {
+    pub fn bitxor(&self, other: &Self) -> Self {
         let mut sb = SubsetBuilder::new();
         for zseg in self.zip(other) {
             sb.push_segment(zseg.len, zseg.a_count ^ zseg.b_count);
@@ -220,7 +213,7 @@ impl Subset {
 
     /// Map the contents of `self` into the 0-regions of `other`.
     /// Precondition: `self.count(CountMatcher::All) == other.count(CountMatcher::Zero)`
-    fn transform(&self, other: &Subset, union: bool) -> Subset {
+    fn transform(&self, other: &Self, union: bool) -> Self {
         let mut sb = SubsetBuilder::new();
         let mut seg_iter = self.segments.iter();
         let mut cur_seg = Segment { len: 0, count: 0 };
@@ -245,8 +238,15 @@ impl Subset {
                 }
             }
         }
-        assert_eq!(cur_seg.len, 0, "the 0-regions of other must be the size of self");
-        assert_eq!(seg_iter.next(), None, "the 0-regions of other must be the size of self");
+        assert_eq!(
+            cur_seg.len, 0,
+            "the 0-regions of other must be the size of self"
+        );
+        assert_eq!(
+            seg_iter.next(),
+            None,
+            "the 0-regions of other must be the size of self"
+        );
         sb.build()
     }
 
@@ -258,12 +258,12 @@ impl Subset {
     /// s2 = self.delete_from_string(s1)
     ///
     /// element in self.transform_expand(other).delete_from_string(s0) if (not in s1) or in s2
-    pub fn transform_expand(&self, other: &Subset) -> Subset {
+    pub fn transform_expand(&self, other: &Self) -> Self {
         self.transform(other, false)
     }
 
     /// The same as taking transform_expand and then unioning with `other`.
-    pub fn transform_union(&self, other: &Subset) -> Subset {
+    pub fn transform_union(&self, other: &Self) -> Self {
         self.transform(other, true)
     }
 
@@ -274,7 +274,7 @@ impl Subset {
     ///
     /// B.transform_shrink(C).delete_from_string(C.delete_from_string(s)) =
     ///   A.delete_from_string(B.delete_from_string(s))
-    pub fn transform_shrink(&self, other: &Subset) -> Subset {
+    pub fn transform_shrink(&self, other: &Self) -> Self {
         let mut sb = SubsetBuilder::new();
         // discard ZipSegments where the shrinking set has positive count
         for zseg in self.zip(other) {
@@ -288,13 +288,17 @@ impl Subset {
 
     /// Return an iterator over the ranges with a count matching the `matcher`.
     /// These will often be easier to work with than raw segments.
-    pub fn range_iter(&self, matcher: CountMatcher) -> RangeIter {
-        RangeIter { seg_iter: self.segments.iter(), consumed: 0, matcher }
+    pub fn range_iter(&self, matcher: CountMatcher) -> RangeIter<'_> {
+        RangeIter {
+            seg_iter: self.segments.iter(),
+            consumed: 0,
+            matcher,
+        }
     }
 
     /// Convenience alias for `self.range_iter(CountMatcher::Zero)`.
     /// Semantically iterates the ranges of the complement of this `Subset`.
-    pub fn complement_iter(&self) -> RangeIter {
+    pub fn complement_iter(&self) -> RangeIter<'_> {
         self.range_iter(CountMatcher::Zero)
     }
 
@@ -303,7 +307,7 @@ impl Subset {
     /// must have the same total length.
     ///
     /// Each returned `ZipSegment` will differ in at least one count.
-    pub fn zip<'a>(&'a self, other: &'a Subset) -> ZipIter<'a> {
+    pub fn zip<'a>(&'a self, other: &'a Self) -> ZipIter<'a> {
         ZipIter {
             a_segs: self.segments.as_slice(),
             b_segs: other.segments.as_slice(),
@@ -317,7 +321,7 @@ impl Subset {
 
     /// Find the complement of this Subset. Every 0-count element will have a
     /// count of 1 and every non-zero element will have a count of 0.
-    pub fn complement(&self) -> Subset {
+    pub fn complement(&self) -> Self {
         let mut sb = SubsetBuilder::new();
         for seg in &self.segments {
             if seg.count == 0 {
@@ -331,11 +335,11 @@ impl Subset {
 
     /// Return a `Mapper` that can be use to map coordinates in the document to coordinates
     /// in this `Subset`, but only in non-decreasing order for performance reasons.
-    pub fn mapper(&self, matcher: CountMatcher) -> Mapper {
+    pub fn mapper(&self, matcher: CountMatcher) -> Mapper<'_> {
         Mapper {
             range_iter: self.range_iter(matcher),
             last_i: 0, // indices only need to be in non-decreasing order, not increasing
-            cur_range: (0, 0), // will immediately try to consume next range
+            cur_range: (0..0), // will immediately try to consume next range
             subset_amount_consumed: 0,
         }
     }
@@ -345,7 +349,7 @@ impl fmt::Debug for Subset {
     /// Use the alternate flag (`#`) to print a more compact representation
     /// where each character represents the count of one element:
     /// '-' is 0, '#' is 1, 2-9 are digits, `+` is >9
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
             for s in &self.segments {
                 let chr = if s.count == 0 {
@@ -375,13 +379,13 @@ pub struct RangeIter<'a> {
 }
 
 impl<'a> Iterator for RangeIter<'a> {
-    type Item = (usize, usize);
+    type Item = Range<usize>;
 
-    fn next(&mut self) -> Option<(usize, usize)> {
+    fn next(&mut self) -> Option<Range<usize>> {
         while let Some(seg) = self.seg_iter.next() {
             self.consumed += seg.len;
             if self.matcher.matches(seg) {
-                return Some((self.consumed - seg.len, self.consumed));
+                return Some(self.consumed - seg.len..self.consumed);
             }
         }
         None
@@ -421,8 +425,14 @@ impl<'a> Iterator for ZipIter<'a> {
                 panic!("can't zip Subsets of different base lengths.")
             }
             (
-                Some(&Segment { len: a_len, count: a_count }),
-                Some(&Segment { len: b_len, count: b_count }),
+                Some(&Segment {
+                    len: a_len,
+                    count: a_count,
+                }),
+                Some(&Segment {
+                    len: b_len,
+                    count: b_count,
+                }),
             ) => {
                 let len = match (a_len + self.a_consumed).cmp(&(b_len + self.b_consumed)) {
                     cmp::Ordering::Equal => {
@@ -444,7 +454,11 @@ impl<'a> Iterator for ZipIter<'a> {
                     }
                 };
                 self.consumed += len;
-                Some(ZipSegment { len, a_count, b_count })
+                Some(ZipSegment {
+                    len,
+                    a_count,
+                    b_count,
+                })
             }
         }
     }
@@ -454,7 +468,7 @@ pub struct Mapper<'a> {
     range_iter: RangeIter<'a>,
     // Not actually necessary for computation, just for dynamic checking of invariant
     last_i: usize,
-    cur_range: (usize, usize),
+    cur_range: Range<usize>,
     pub subset_amount_consumed: usize,
 }
 
@@ -478,27 +492,27 @@ impl<'a> Mapper<'a> {
     pub fn doc_index_to_subset(&mut self, i: usize) -> usize {
         assert!(
             i >= self.last_i,
-            "method must be called with i in non-decreasing order. i={}<{}=last_i",
+            "method must be called with i in non-decreasing order. i={} < last_i={}",
             i,
             self.last_i
         );
         self.last_i = i;
 
-        while i >= self.cur_range.1 {
-            self.subset_amount_consumed += self.cur_range.1 - self.cur_range.0;
+        while i >= self.cur_range.end {
+            self.subset_amount_consumed += self.cur_range.end - self.cur_range.start;
             self.cur_range = match self.range_iter.next() {
                 Some(range) => range,
                 // past the end of the subset
                 None => {
                     // ensure we don't try to consume any more
-                    self.cur_range = (usize::max_value(), usize::max_value());
+                    self.cur_range = usize::MAX..usize::MAX;
                     return self.subset_amount_consumed;
                 }
             }
         }
 
-        if i >= self.cur_range.0 {
-            let dist_in_range = i - self.cur_range.0;
+        if i >= self.cur_range.start {
+            let dist_in_range = i - self.cur_range.start;
             dist_in_range + self.subset_amount_consumed
         } else {
             // not in the subset
@@ -509,8 +523,7 @@ impl<'a> Mapper<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::multiset::*;
-    use crate::test_helpers::find_deletions;
+    use crate::{multiset::*, test_helpers::find_deletions};
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -538,7 +551,43 @@ mod tests {
         }
         sb.pad_to_len(TEST_STR.len());
         let s = sb.build();
-        println!("{:?}", s);
+        assert_eq!(
+            s,
+            Subset {
+                segments: vec![
+                    Segment { len: 1, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 2, count: 1 },
+                    Segment { len: 2, count: 0 },
+                    Segment { len: 5, count: 1 },
+                    Segment { len: 2, count: 0 },
+                    Segment { len: 1, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 3, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 4, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 2, count: 1 },
+                    Segment { len: 5, count: 0 },
+                    Segment { len: 1, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 2, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 1, count: 1 },
+                    Segment { len: 3, count: 0 },
+                    Segment { len: 4, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 3, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 2, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 5, count: 1 },
+                    Segment { len: 1, count: 0 },
+                    Segment { len: 1, count: 1 },
+                    Segment { len: 3, count: 0 }
+                ]
+            }
+        );
         assert_eq!("145BCEINQRSTUWZbcdimpvxyz", s.delete_from_string(TEST_STR));
     }
 
@@ -583,17 +632,6 @@ mod tests {
         assert_eq!(8, m.doc_index_to_subset(60));
         assert_eq!(9, m.doc_index_to_subset(61)); // not in subset
         assert_eq!(9, m.doc_index_to_subset(62)); // not in subset
-    }
-
-    #[test]
-    #[should_panic(expected = "non-decreasing")]
-    fn test_mapper_requires_non_decreasing() {
-        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
-        let s = find_deletions(substr, TEST_STR);
-        let mut m = s.mapper(CountMatcher::NonZero);
-        m.doc_index_to_subset(0);
-        m.doc_index_to_subset(2);
-        m.doc_index_to_subset(1);
     }
 
     #[test]
@@ -645,5 +683,16 @@ mod tests {
             "01245ABCDJLQSWXYgsv",
             "0123457ABCDEFHIJLNOQRSUVWXYZaeghikpqrstuvwxz",
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-decreasing")]
+    fn test_mapper_requires_non_decreasing() {
+        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
+        let s = find_deletions(substr, TEST_STR);
+        let mut m = s.mapper(CountMatcher::NonZero);
+        m.doc_index_to_subset(0);
+        m.doc_index_to_subset(2);
+        m.doc_index_to_subset(1);
     }
 }

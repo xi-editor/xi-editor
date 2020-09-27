@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, ops::Range, str::FromStr};
 
-use serde::de::{self, Deserialize, Deserializer, Visitor};
-use serde::ser::{Serialize, SerializeStruct, SerializeTupleVariant, Serializer};
+use serde::{
+    de::{self, Deserialize, Deserializer, Visitor},
+    ser::{Serialize, SerializeStruct, SerializeTupleVariant, Serializer},
+};
 
-use crate::tree::Node;
-use crate::{Delta, DeltaElement, Rope, RopeInfo};
+use crate::{tree::Node, Delta, DeltaElement, Rope, RopeInfo};
 
 impl Serialize for Rope {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -44,7 +44,7 @@ struct RopeVisitor;
 impl<'de> Visitor<'de> for RopeVisitor {
     type Value = Rope;
 
-    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "a string")
     }
 
@@ -61,14 +61,14 @@ impl Serialize for DeltaElement<RopeInfo> {
     where
         S: Serializer,
     {
-        match *self {
-            DeltaElement::Copy(ref start, ref end) => {
+        match self {
+            DeltaElement::Copy(range) => {
                 let mut el = serializer.serialize_tuple_variant("DeltaElement", 0, "copy", 2)?;
-                el.serialize_field(start)?;
-                el.serialize_field(end)?;
+                el.serialize_field(&range.start)?;
+                el.serialize_field(&range.end)?;
                 el.end()
             }
-            DeltaElement::Insert(ref node) => {
+            DeltaElement::Insert(node) => {
                 serializer.serialize_newtype_variant("DeltaElement", 1, "insert", node)
             }
         }
@@ -97,7 +97,7 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
         #[derive(Serialize, Deserialize)]
         #[serde(rename_all = "snake_case")]
         enum RopeDeltaElement_ {
-            Copy(usize, usize),
+            Copy(Range<usize>),
             Insert(Node<RopeInfo>),
         }
 
@@ -110,7 +110,7 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
         impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
             fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
                 match elem {
-                    RopeDeltaElement_::Copy(start, end) => DeltaElement::Copy(start, end),
+                    RopeDeltaElement_::Copy(range) => DeltaElement::Copy(range),
                     RopeDeltaElement_::Insert(rope) => DeltaElement::Insert(rope),
                 }
             }

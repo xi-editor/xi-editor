@@ -15,18 +15,20 @@
 //! A rope data structure with a line count metric and (soon) other useful
 //! info.
 
-#![allow(clippy::needless_return)]
+use std::{
+    borrow::Cow,
+    cmp::{max, min, Ordering},
+    fmt,
+    ops::{Add, Range},
+    str::{self, FromStr},
+    string::ParseError,
+};
 
-use std::borrow::Cow;
-use std::cmp::{max, min, Ordering};
-use std::fmt;
-use std::ops::Add;
-use std::str::{self, FromStr};
-use std::string::ParseError;
-
-use crate::delta::{Delta, DeltaElement};
-use crate::interval::{Interval, IntervalBounds};
-use crate::tree::{Cursor, DefaultMetric, Leaf, Metric, Node, NodeInfo, TreeBuilder};
+use crate::{
+    delta::{Delta, DeltaElement},
+    interval::IntervalBounds,
+    tree::{Cursor, DefaultMetric, Leaf, Metric, Node, NodeInfo, TreeBuilder},
+};
 
 use memchr::{memchr, memrchr};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
@@ -57,7 +59,7 @@ const MAX_LEAF: usize = 1024;
 /// Create a `Rope` from a `String`:
 ///
 /// ```rust
-/// # use xi_rope::Rope;
+/// # use xcore::Rope;
 /// let a = Rope::from("hello ");
 /// let b = Rope::from("world");
 /// assert_eq!("hello world", String::from(a.clone() + b.clone()));
@@ -67,7 +69,7 @@ const MAX_LEAF: usize = 1024;
 /// Get a slice of a `Rope`:
 ///
 /// ```rust
-/// # use xi_rope::Rope;
+/// # use xcore::Rope;
 /// let a = Rope::from("hello world");
 /// let b = a.slice(1..9);
 /// assert_eq!("ello wor", String::from(&b));
@@ -78,12 +80,18 @@ const MAX_LEAF: usize = 1024;
 /// Replace part of a `Rope`:
 ///
 /// ```rust
-/// # use xi_rope::Rope;
+/// # use xcore::Rope;
 /// let mut a = Rope::from("hello world");
 /// a.edit(1..9, "era");
 /// assert_eq!("herald", String::from(a));
 /// ```
 pub type Rope = Node<RopeInfo>;
+
+#[derive(Clone, Copy)]
+pub struct RopeInfo {
+    lines: usize,
+    utf16_size: usize,
+}
 
 /// Represents a transform from one rope to another.
 pub type RopeDelta = Delta<RopeInfo>;
@@ -100,10 +108,8 @@ impl Leaf for String {
         self.len() >= MIN_LEAF
     }
 
-    fn push_maybe_split(&mut self, other: &String, iv: Interval) -> Option<String> {
-        //println!("push_maybe_split [{}] [{}] {:?}", self, other, iv);
-        let (start, end) = iv.start_end();
-        self.push_str(&other[start..end]);
+    fn push_maybe_split(&mut self, other: &String, iv: Range<usize>) -> Option<String> {
+        self.push_str(&other[iv]);
         if self.len() <= MAX_LEAF {
             None
         } else {
@@ -116,12 +122,6 @@ impl Leaf for String {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct RopeInfo {
-    lines: usize,
-    utf16_size: usize,
-}
-
 impl NodeInfo for RopeInfo {
     type L = String;
 
@@ -131,11 +131,17 @@ impl NodeInfo for RopeInfo {
     }
 
     fn compute_info(s: &String) -> Self {
-        RopeInfo { lines: count_newlines(s), utf16_size: count_utf16_code_units(s) }
+        RopeInfo {
+            lines: count_newlines(s),
+            utf16_size: count_utf16_code_units(s),
+        }
     }
 
     fn identity() -> Self {
-        RopeInfo { lines: 0, utf16_size: 0 }
+        RopeInfo {
+            lines: 0,
+            utf16_size: 0,
+        }
     }
 }
 
@@ -375,6 +381,7 @@ fn find_leaf_split(s: &str, minsplit: usize) -> usize {
 
 impl FromStr for Rope {
     type Err = ParseError;
+
     fn from_str(s: &str) -> Result<Rope, Self::Err> {
         let mut b = TreeBuilder::new();
         b.push_str(s);
@@ -383,14 +390,6 @@ impl FromStr for Rope {
 }
 
 impl Rope {
-    /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
-    ///
-    /// Time complexity: O(log n)
-    #[deprecated(since = "0.3.0", note = "Use Rope::edit instead")]
-    pub fn edit_str<T: IntervalBounds>(&mut self, iv: T, new: &str) {
-        self.edit(iv, new)
-    }
-
     /// Returns a new Rope with the contents of the provided range.
     pub fn slice<T: IntervalBounds>(&self, iv: T) -> Rope {
         self.subseq(iv)
@@ -498,10 +497,13 @@ impl Rope {
     ///
     /// Time complexity: technically O(n log n), but the constant factor is so
     /// tiny it is effectively O(n). This iterator does not allocate.
-    pub fn iter_chunks<T: IntervalBounds>(&self, range: T) -> ChunkIter {
-        let Interval { start, end } = range.into_interval(self.len());
+    pub fn iter_chunks<T: IntervalBounds>(&self, range: T) -> ChunkIter<'_> {
+        let Range { start, end } = range.into_interval(self.len());
 
-        ChunkIter { cursor: Cursor::new(self, start), end }
+        ChunkIter {
+            cursor: Cursor::new(self, start),
+            end,
+        }
     }
 
     /// An iterator over the raw lines. The lines, except the last, include the
@@ -509,8 +511,11 @@ impl Rope {
     ///
     /// The return type is a `Cow<str>`, and in most cases the lines are slices
     /// borrowed from the rope.
-    pub fn lines_raw<T: IntervalBounds>(&self, range: T) -> LinesRaw {
-        LinesRaw { inner: self.iter_chunks(range), fragment: "" }
+    pub fn lines_raw<T: IntervalBounds>(&self, range: T) -> LinesRaw<'_> {
+        LinesRaw {
+            inner: self.iter_chunks(range),
+            fragment: "",
+        }
     }
 
     /// An iterator over the lines of a rope.
@@ -523,8 +528,10 @@ impl Rope {
     /// from the rope.
     ///
     /// The semantics are intended to match `str::lines()`.
-    pub fn lines<T: IntervalBounds>(&self, range: T) -> Lines {
-        Lines { inner: self.lines_raw(range) }
+    pub fn lines<T: IntervalBounds>(&self, range: T) -> Lines<'_> {
+        Lines {
+            inner: self.lines_raw(range),
+        }
     }
 
     // callers should be encouraged to use cursor instead
@@ -534,7 +541,7 @@ impl Rope {
         leaf.as_bytes()[pos]
     }
 
-    pub fn slice_to_cow<T: IntervalBounds>(&self, range: T) -> Cow<str> {
+    pub fn slice_to_cow<T: IntervalBounds>(&self, range: T) -> Cow<'_, str> {
         let mut iter = self.iter_chunks(range);
         let first = iter.next();
         let second = iter.next();
@@ -588,7 +595,11 @@ impl TreeBuilder<RopeInfo> {
             return;
         }
         while !s.is_empty() {
-            let splitpoint = if s.len() > MAX_LEAF { find_leaf_split_for_bulk(s) } else { s.len() };
+            let splitpoint = if s.len() > MAX_LEAF {
+                find_leaf_split_for_bulk(s)
+            } else {
+                s.len()
+            };
             self.push_leaf(s[..splitpoint].to_owned());
             s = &s[splitpoint..];
         }
@@ -615,7 +626,7 @@ impl<'a> From<&'a Rope> for String {
 }
 
 impl fmt::Display for Rope {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for s in self.iter_chunks(..) {
             write!(f, "{}", s)?;
         }
@@ -624,7 +635,7 @@ impl fmt::Display for Rope {
 }
 
 impl fmt::Debug for Rope {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
             write!(f, "{}", String::from(self))
         } else {
@@ -635,6 +646,7 @@ impl fmt::Debug for Rope {
 
 impl Add for Rope {
     type Output = Rope;
+
     fn add(self, rhs: Rope) -> Rope {
         let mut b = TreeBuilder::new();
         b.push(self);
@@ -753,7 +765,13 @@ impl<'a> Iterator for LinesRaw<'a> {
             if self.fragment.is_empty() {
                 match self.inner.next() {
                     Some(chunk) => self.fragment = chunk,
-                    None => return if result.is_empty() { None } else { Some(result) },
+                    None => {
+                        return if result.is_empty() {
+                            None
+                        } else {
+                            Some(result)
+                        }
+                    }
                 }
                 if self.fragment.is_empty() {
                     // can only happen on empty input
@@ -838,27 +856,45 @@ mod tests {
     fn lines_small() {
         let a = Rope::from("a\nb\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\nb\n");
         assert_eq!(vec!["a", "b"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("\n");
         assert_eq!(vec![""], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("");
         assert_eq!(0, a.lines(..).count());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\r\nb\r\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\rb\rc");
         assert_eq!(vec!["a\rb\rc"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -877,9 +913,18 @@ mod tests {
         let r = r + Rope::from(&b[MIN_LEAF..]);
         //println!("{:?}", r.iter_chunks().collect::<Vec<_>>());
 
-        assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw(..).collect::<Vec<_>>());
-        assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&r).lines().collect::<Vec<_>>(), r.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            vec![a.as_str(), b.as_str()],
+            r.lines_raw(..).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec![&a[..line_len], &b[..line_len]],
+            r.lines(..).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            String::from(&r).lines().collect::<Vec<_>>(),
+            r.lines(..).collect::<Vec<_>>()
+        );
 
         // additional tests for line indexing
         assert_eq!(a.len(), r.offset_of_line(1));
@@ -1149,7 +1194,7 @@ mod tests {
         let cow = rope.slice_to_cow(..);
 
         assert!(short_text.len() <= 1024);
-        assert_eq!(cow, Cow::Borrowed(short_text) as Cow<str>);
+        assert_eq!(cow, Cow::Borrowed(short_text) as Cow<'_, str>);
     }
 
     #[test]
@@ -1163,7 +1208,7 @@ mod tests {
         let cow = rope.slice_to_cow(..);
 
         assert!(long_text.len() > 1024);
-        assert_eq!(cow, Cow::Owned(long_text) as Cow<str>);
+        assert_eq!(cow, Cow::Owned(long_text) as Cow<'_, str>);
     }
 
     #[test]

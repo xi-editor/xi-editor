@@ -16,7 +16,7 @@
 
 use rand::{thread_rng, Rng};
 
-use xi_rope::interval::IntervalBounds;
+use xi_rope::{interval::IntervalBounds, Interval};
 use xi_rope::{LinesMetric, RopeDelta};
 use xi_trace::trace_block;
 
@@ -109,12 +109,14 @@ impl<S: Clone + Default> StateCache<S> {
     /// at index `i` is an exact match, while `Err(i)` means the entry would be
     /// inserted at `i`.
     fn find_line(&self, line_num: usize) -> Result<usize, usize> {
-        self.state_cache.binary_search_by(|probe| probe.line_num.cmp(&line_num))
+        self.state_cache
+            .binary_search_by(|probe| probe.line_num.cmp(&line_num))
     }
 
     /// Find an entry in the cache by offset. Similar to `find_line`.
     pub fn find_offset(&self, offset: usize) -> Result<usize, usize> {
-        self.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
+        self.state_cache
+            .binary_search_by(|probe| probe.offset.cmp(&offset))
     }
 
     /// Get the state from the nearest cache entry at or before given line number.
@@ -142,7 +144,9 @@ impl<S: Clone + Default> StateCache<S> {
 
     /// Get the state at the given line number, if it exists in the cache.
     pub fn get(&self, line_num: usize) -> Option<&S> {
-        self.find_line(line_num).ok().and_then(|ix| self.state_cache[ix].user_state.as_ref())
+        self.find_line(line_num)
+            .ok()
+            .and_then(|ix| self.state_cache[ix].user_state.as_ref())
     }
 
     /// Set the state at the given line number. Note: has no effect if line_num
@@ -188,7 +192,14 @@ impl<S: Clone + Default> StateCache<S> {
         match self.find_line(line_num) {
             Ok(_ix) => panic!("entry already exists"),
             Err(ix) => {
-                self.state_cache.insert(ix, CacheEntry { line_num, offset, user_state });
+                self.state_cache.insert(
+                    ix,
+                    CacheEntry {
+                        line_num,
+                        offset,
+                        user_state,
+                    },
+                );
                 ix
             }
         }
@@ -215,7 +226,11 @@ impl<S: Clone + Default> StateCache<S> {
 
     /// Compute the gap that would result after deleting the given entry.
     fn compute_gap(&self, ix: usize) -> usize {
-        let before = if ix == 0 { 0 } else { self.state_cache[ix - 1].offset };
+        let before = if ix == 0 {
+            0
+        } else {
+            self.state_cache[ix - 1].offset
+        };
         let after = if let Some(item) = self.state_cache.get(ix + 1) {
             item.offset
         } else {
@@ -229,7 +244,14 @@ impl<S: Clone + Default> StateCache<S> {
     fn truncate_cache(&mut self, offset: usize) {
         let (line_num, ix) = match self.find_offset(offset) {
             Ok(ix) => (self.state_cache[ix].line_num, ix + 1),
-            Err(ix) => (if ix == 0 { 0 } else { self.state_cache[ix - 1].line_num }, ix),
+            Err(ix) => (
+                if ix == 0 {
+                    0
+                } else {
+                    self.state_cache[ix - 1].line_num
+                },
+                ix,
+            ),
         };
         self.truncate_frontier(line_num);
         self.state_cache.truncate(ix);
@@ -253,12 +275,12 @@ impl<S: Clone + Default> StateCache<S> {
             assert_eq!(new_len, n.len());
 
             let newline_count = n.measure::<LinesMetric>();
-            self.line_cache_simple_insert(iv.start(), new_len, newline_count);
+            self.line_cache_simple_insert(iv.start, new_len, newline_count);
         } else if delta.is_simple_delete() {
             assert_eq!(new_len, 0);
-            self.line_cache_simple_delete(iv.start(), iv.end())
+            self.line_cache_simple_delete(iv.start, iv.end)
         } else {
-            self.clear_to_start(iv.start());
+            self.clear_to_start(iv.start);
         }
     }
 

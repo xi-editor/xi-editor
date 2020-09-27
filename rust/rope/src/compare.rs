@@ -13,8 +13,10 @@
 // limitations under the License.
 
 //! Fast comparison of rope regions, principally for diffing.
-use crate::rope::{BaseMetric, Rope, RopeInfo};
-use crate::tree::Cursor;
+use crate::{
+    rope::{BaseMetric, Rope, RopeInfo},
+    tree::Cursor,
+};
 
 #[allow(dead_code)]
 const SSE_STRIDE: usize = 16;
@@ -28,7 +30,7 @@ const SSE_STRIDE: usize = 16;
 /// # Examples
 ///
 /// ```
-/// # use xi_rope::compare::sse_compare_mask;
+/// # use xcore::compare::sse_compare_mask;
 /// # if is_x86_feature_detected!("sse4.2") {
 /// let one = "aaaaaaaaaaaaaaaa";
 /// let two = "aa3aaaaa9aaaEaaa";
@@ -182,7 +184,10 @@ pub fn ne_idx_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn ne_idx_rev_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
-    one.iter().rev().zip(two.iter().rev()).position(|(a, b)| a != b)
+    one.iter()
+        .rev()
+        .zip(two.iter().rev())
+        .position(|(a, b)| a != b)
 }
 
 /// Utility for efficiently comparing two ropes.
@@ -214,8 +219,8 @@ impl<'a> RopeScanner<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use xi_rope::compare::RopeScanner;
-    /// # use xi_rope::Rope;
+    /// # use xcore::compare::RopeScanner;
+    /// # use xcore::Rope;
     ///
     /// let one = Rope::from("hiii");
     /// let two = Rope::from("siii");
@@ -227,7 +232,7 @@ impl<'a> RopeScanner<'a> {
     where
         T: Into<Option<usize>>,
     {
-        let stop = stop.into().unwrap_or(usize::max_value());
+        let stop = stop.into().unwrap_or(usize::MAX);
         self.base.set(base_off);
         self.target.set(targ_off);
         self.scanned = 0;
@@ -248,7 +253,11 @@ impl<'a> RopeScanner<'a> {
                 ne_idx_rev(self.base_chunk.as_bytes(), self.target_chunk.as_bytes())
             {
                 // find nearest codepoint boundary
-                while idx > 1 && !self.base_chunk.is_char_boundary(self.base_chunk.len() - idx) {
+                while idx > 1
+                    && !self
+                        .base_chunk
+                        .is_char_boundary(self.base_chunk.len() - idx)
+                {
                     idx -= 1;
                 }
                 return stop.min(self.scanned + idx);
@@ -281,8 +290,8 @@ impl<'a> RopeScanner<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use xi_rope::compare::RopeScanner;
-    /// # use xi_rope::Rope;
+    /// # use xcore::compare::RopeScanner;
+    /// # use xcore::Rope;
     ///
     /// let one = Rope::from("uh-oh🙈");
     /// let two = Rope::from("uh-oh🙉");
@@ -294,7 +303,7 @@ impl<'a> RopeScanner<'a> {
     where
         T: Into<Option<usize>>,
     {
-        let stop = stop.into().unwrap_or(usize::max_value());
+        let stop = stop.into().unwrap_or(usize::MAX);
         self.base.set(base_off);
         self.target.set(targ_off);
         self.scanned = 0;
@@ -342,8 +351,8 @@ impl<'a> RopeScanner<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use xi_rope::compare::RopeScanner;
-    /// # use xi_rope::Rope;
+    /// # use xcore::compare::RopeScanner;
+    /// # use xcore::Rope;
     ///
     /// let one = Rope::from("123xxx12345");
     /// let two = Rope::from("123ZZZ12345");
@@ -535,7 +544,10 @@ mod tests {
         let chunk4 = Rope::from("aaaaaabaaaaaaaaa");
         {
             let mut scanner = RopeScanner::new(&rope, &chunk1);
-            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk1.len(), None), 16);
+            assert_eq!(
+                scanner.find_ne_char_back(rope.len(), chunk1.len(), None),
+                16
+            );
         }
 
         {
@@ -562,7 +574,10 @@ mod tests {
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk1);
-            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk1.len(), None), 13);
+            assert_eq!(
+                scanner.find_ne_char_back(rope.len(), chunk1.len(), None),
+                13
+            );
         }
 
         {

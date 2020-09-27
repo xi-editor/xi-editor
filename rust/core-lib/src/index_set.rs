@@ -127,8 +127,10 @@ impl IndexSet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut transformer = Transformer::new(delta);
         for &(start, end) in &self.ranges {
-            let new_range =
-                (transformer.transform(start, false), transformer.transform(end, false));
+            let new_range = (
+                transformer.transform(start, false),
+                transformer.transform(end, false),
+            );
             if new_range.0 == new_range.1 {
                 continue; // remove collapsed regions
             }
@@ -219,7 +221,10 @@ mod tests {
         assert_eq!(e.minus_one_range(0, 4).collect::<Vec<_>>(), vec![(0, 3)]);
         assert_eq!(e.minus_one_range(4, 10).collect::<Vec<_>>(), vec![(5, 10)]);
         assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 10)]);
-        assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 3), (5, 10)]);
+        assert_eq!(
+            e.minus_one_range(0, 10).collect::<Vec<_>>(),
+            vec![(0, 3), (5, 10)]
+        );
     }
 
     #[test]
@@ -231,10 +236,19 @@ mod tests {
         assert_eq!(e.minus_one_range(3, 5).collect::<Vec<_>>(), vec![]);
         assert_eq!(e.minus_one_range(0, 3).collect::<Vec<_>>(), vec![(0, 3)]);
         assert_eq!(e.minus_one_range(0, 4).collect::<Vec<_>>(), vec![(0, 3)]);
-        assert_eq!(e.minus_one_range(4, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
-        assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
+        assert_eq!(
+            e.minus_one_range(4, 10).collect::<Vec<_>>(),
+            vec![(5, 7), (9, 10)]
+        );
+        assert_eq!(
+            e.minus_one_range(5, 10).collect::<Vec<_>>(),
+            vec![(5, 7), (9, 10)]
+        );
         assert_eq!(e.minus_one_range(8, 10).collect::<Vec<_>>(), vec![(9, 10)]);
-        assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 3), (5, 7), (9, 10)]);
+        assert_eq!(
+            e.minus_one_range(0, 10).collect::<Vec<_>>(),
+            vec![(0, 3), (5, 7), (9, 10)]
+        );
     }
 
     #[test]
@@ -274,7 +288,10 @@ mod tests {
         assert_eq!(e.get_ranges(), &[(1, 5), (7, 9)]);
         e.union_one_range(4, 6);
         assert_eq!(e.get_ranges(), &[(1, 6), (7, 9)]);
-        assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 1), (6, 7), (9, 10)]);
+        assert_eq!(
+            e.minus_one_range(0, 10).collect::<Vec<_>>(),
+            vec![(0, 1), (6, 7), (9, 10)]
+        );
 
         e.clear();
         assert_eq!(e.get_ranges(), &[]);
@@ -318,21 +335,21 @@ mod tests {
 
     #[test]
     fn apply_delta() {
-        use xi_rope::{Delta, Interval, Rope};
+        use xi_rope::{Delta, Rope};
 
         let mut e = IndexSet::new();
         e.union_one_range(1, 3);
         e.union_one_range(5, 9);
 
-        let d = Delta::simple_edit(Interval::new(2, 2), Rope::from("..."), 10);
+        let d = Delta::simple_edit(2..2, Rope::from("..."), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(1, 6), (8, 12)]);
 
-        let d = Delta::simple_edit(Interval::new(0, 3), Rope::from(""), 10);
+        let d = Delta::simple_edit(0..3, Rope::from(""), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(2, 6)]);
 
-        let d = Delta::simple_edit(Interval::new(2, 6), Rope::from(""), 10);
+        let d = Delta::simple_edit(2..6, Rope::from(""), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(1, 5)]);
     }

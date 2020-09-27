@@ -14,18 +14,14 @@
 
 //! Implementation of string finding in ropes.
 
-use std::cmp::min;
-
 use memchr::{memchr, memchr2, memchr3};
 
-use crate::rope::BaseMetric;
-use crate::rope::LinesRaw;
-use crate::rope::RopeInfo;
-use crate::tree::Cursor;
+use crate::{
+    rope::{BaseMetric, LinesRaw, RopeInfo},
+    tree::Cursor,
+};
 use regex::Regex;
-use std::borrow::Cow;
-use std::iter::FromIterator;
-use std::str;
+use std::{borrow::Cow, cmp::min, iter::FromIterator, str};
 
 /// The result of a [`find`][find] operation.
 ///
@@ -64,13 +60,13 @@ pub enum CaseMatching {
 ///
 /// Can panic if `pat` is empty.
 pub fn find(
-    cursor: &mut Cursor<RopeInfo>,
-    lines: &mut LinesRaw,
+    cursor: &mut Cursor<'_, RopeInfo>,
+    lines: &mut LinesRaw<'_>,
     cm: CaseMatching,
     pat: &str,
     regex: Option<&Regex>,
 ) -> Option<usize> {
-    match find_progress(cursor, lines, cm, pat, usize::max_value(), regex) {
+    match find_progress(cursor, lines, cm, pat, usize::MAX, regex) {
         FindResult::Found(start) => Some(start),
         FindResult::NotFound => None,
         FindResult::TryAgain => unreachable!("find_progress got stuck"),
@@ -89,8 +85,8 @@ pub fn find(
 ///
 /// [find]: fn.find.html
 pub fn find_progress(
-    cursor: &mut Cursor<RopeInfo>,
-    lines: &mut LinesRaw,
+    cursor: &mut Cursor<'_, RopeInfo>,
+    lines: &mut LinesRaw<'_>,
     cm: CaseMatching,
     pat: &str,
     num_steps: usize,
@@ -149,11 +145,11 @@ pub fn find_progress(
 
 // Run the core repeatedly until there is a result, up to a certain number of steps.
 fn find_progress_iter(
-    cursor: &mut Cursor<RopeInfo>,
-    lines: &mut LinesRaw,
+    cursor: &mut Cursor<'_, RopeInfo>,
+    lines: &mut LinesRaw<'_>,
     pat: &str,
     scanner: impl Fn(&str) -> Option<usize>,
-    matcher: impl Fn(&mut Cursor<RopeInfo>, &mut LinesRaw, &str) -> Option<usize>,
+    matcher: impl Fn(&mut Cursor<'_, RopeInfo>, &mut LinesRaw<'_>, &str) -> Option<usize>,
     num_steps: usize,
 ) -> FindResult {
     for _ in 0..num_steps {
@@ -169,12 +165,12 @@ fn find_progress_iter(
 // scans through a single leaf searching for some prefix of the pattern,
 // then a "matcher" which confirms that such a candidate actually matches
 // in the full rope.
-fn find_core(
-    cursor: &mut Cursor<RopeInfo>,
-    lines: &mut LinesRaw,
+fn find_core<F: Fn(&mut Cursor<'_, RopeInfo>, &mut LinesRaw<'_>, &str) -> Option<usize>>(
+    cursor: &mut Cursor<'_, RopeInfo>,
+    lines: &mut LinesRaw<'_>,
     pat: &str,
     scanner: impl Fn(&str) -> Option<usize>,
-    matcher: impl Fn(&mut Cursor<RopeInfo>, &mut LinesRaw, &str) -> Option<usize>,
+    matcher: F,
 ) -> FindResult {
     let orig_pos = cursor.pos();
 
@@ -205,8 +201,8 @@ fn find_core(
 /// position on failure, but the end of the string on success. Returns the
 /// start position of the match.
 pub fn compare_cursor_str(
-    cursor: &mut Cursor<RopeInfo>,
-    _lines: &mut LinesRaw,
+    cursor: &mut Cursor<'_, RopeInfo>,
+    _lines: &mut LinesRaw<'_>,
     mut pat: &str,
 ) -> Option<usize> {
     let start_position = cursor.pos();
@@ -237,8 +233,8 @@ pub fn compare_cursor_str(
 /// normalize both strings before comparison). Returns the start position
 /// of the match.
 pub fn compare_cursor_str_casei(
-    cursor: &mut Cursor<RopeInfo>,
-    _lines: &mut LinesRaw,
+    cursor: &mut Cursor<'_, RopeInfo>,
+    _lines: &mut LinesRaw<'_>,
     pat: &str,
 ) -> Option<usize> {
     let start_position = cursor.pos();
@@ -274,8 +270,8 @@ pub fn compare_cursor_str_casei(
 /// is consumed and matched against the regular expression. Otherwise only
 /// the current line is matched. Returns the start position of the match.
 pub fn compare_cursor_regex(
-    cursor: &mut Cursor<RopeInfo>,
-    lines: &mut LinesRaw,
+    cursor: &mut Cursor<'_, RopeInfo>,
+    lines: &mut LinesRaw<'_>,
     pat: &str,
     regex: &Regex,
 ) -> Option<usize> {
@@ -285,7 +281,7 @@ pub fn compare_cursor_regex(
         return Some(orig_position);
     }
 
-    let text: Cow<str>;
+    let text: Cow<'_, str>;
 
     if is_multiline_regex(pat) {
         // consume all of the text if regex is multi line matching
@@ -336,10 +332,11 @@ fn scan_lowercase(probe: char, s: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::CaseMatching::{CaseInsensitive, Exact};
-    use super::*;
-    use crate::rope::Rope;
-    use crate::tree::Cursor;
+    use super::{
+        CaseMatching::{CaseInsensitive, Exact},
+        *,
+    };
+    use crate::{rope::Rope, tree::Cursor};
     use regex::RegexBuilder;
 
     const REGEX_SIZE_LIMIT: usize = 1000000;
@@ -353,7 +350,10 @@ mod tests {
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", None), Some(13));
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", None), None);
         c.set(0);
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", None), Some(13));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "Léopard", None),
+            Some(13)
+        );
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", None), None);
         c.set(0);
         // Note: these two characters both start with 0xE8 in utf-8
@@ -380,10 +380,16 @@ mod tests {
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", None), Some(4013));
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", None), None);
         c.set(0);
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", None), Some(4013));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "Léopard", None),
+            Some(4013)
+        );
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", None), None);
         c.set(0);
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", None), Some(4006));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "老虎", None),
+            Some(4006)
+        );
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", None), None);
         c.set(0);
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "虎", None), Some(4009));
@@ -397,20 +403,50 @@ mod tests {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", None), Some(0));
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", None), Some(13));
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", None), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "l", None),
+            Some(0)
+        );
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "l", None),
+            Some(13)
+        );
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "l", None),
+            None
+        );
         c.set(0);
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "léopard", None), Some(13));
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "léopard", None), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "léopard", None),
+            Some(13)
+        );
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "léopard", None),
+            None
+        );
         c.set(0);
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "LÉOPARD", None), Some(13));
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "LÉOPARD", None), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "LÉOPARD", None),
+            Some(13)
+        );
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "LÉOPARD", None),
+            None
+        );
         c.set(0);
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", None), Some(6));
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", None), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", None),
+            Some(6)
+        );
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", None),
+            None
+        );
         c.set(0);
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", None), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", None),
+            None
+        );
     }
 
     #[test]
@@ -418,9 +454,15 @@ mod tests {
         let a = Rope::from("![cfg(test)]");
         let mut c = Cursor::new(&a, 0);
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "(test)", None), Some(5));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "(test)", None),
+            Some(5)
+        );
         c.set(0);
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "(TEST)", None), Some(5));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "(TEST)", None),
+            Some(5)
+        );
     }
 
     #[test]
@@ -428,19 +470,31 @@ mod tests {
         let a = Rope::from("İ");
         let mut c = Cursor::new(&a, 0);
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "i̇", None), Some(0));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "i̇", None),
+            Some(0)
+        );
 
         let a = Rope::from("i̇");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "İ", None), Some(0));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "İ", None),
+            Some(0)
+        );
 
         let a = Rope::from("\u{212A}");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "k", None), Some(0));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "k", None),
+            Some(0)
+        );
 
         let a = Rope::from("k");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\u{212A}", None), Some(0));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "\u{212A}", None),
+            Some(0)
+        );
     }
 
     #[test]
@@ -448,7 +502,10 @@ mod tests {
         let a = Rope::from("\u{0100}I");
         let mut c = Cursor::new(&a, 0);
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "i", None), Some(2));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "i", None),
+            Some(2)
+        );
     }
 
     #[test]
@@ -456,13 +513,25 @@ mod tests {
         let a = Rope::from("Löwe 老虎 Léopard\nSecond line");
         let mut c = Cursor::new(&a, 0);
         let mut raw_lines = a.lines_raw(0..a.len());
-        let regex =
-            RegexBuilder::new("L").size_limit(REGEX_SIZE_LIMIT).case_insensitive(true).build().ok();
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()), Some(0));
+        let regex = RegexBuilder::new("L")
+            .size_limit(REGEX_SIZE_LIMIT)
+            .case_insensitive(true)
+            .build()
+            .ok();
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()),
+            Some(0)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()), Some(13));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()),
+            Some(13)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()), Some(29));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()),
+            Some(29)
+        );
         c.set(0);
         let regex = RegexBuilder::new("Léopard")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -471,11 +540,26 @@ mod tests {
             .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(
-            find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", regex.as_ref()),
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "Léopard",
+                regex.as_ref()
+            ),
             Some(13)
         );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", regex.as_ref()), None);
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "Léopard",
+                regex.as_ref()
+            ),
+            None
+        );
         c.set(0);
         let mut raw_lines = a.lines_raw(0..a.len());
         let regex = RegexBuilder::new("老虎")
@@ -483,9 +567,27 @@ mod tests {
             .case_insensitive(true)
             .build()
             .ok();
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", regex.as_ref()), Some(6));
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "老虎",
+                regex.as_ref()
+            ),
+            Some(6)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", regex.as_ref()), None);
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "老虎",
+                regex.as_ref()
+            ),
+            None
+        );
         c.set(0);
         let regex = RegexBuilder::new("Tiger")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -493,19 +595,43 @@ mod tests {
             .build()
             .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", regex.as_ref()), None);
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "Tiger",
+                regex.as_ref()
+            ),
+            None
+        );
         c.set(0);
-        let regex =
-            RegexBuilder::new(".").size_limit(REGEX_SIZE_LIMIT).case_insensitive(true).build().ok();
+        let regex = RegexBuilder::new(".")
+            .size_limit(REGEX_SIZE_LIMIT)
+            .case_insensitive(true)
+            .build()
+            .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, ".", regex.as_ref()), Some(0));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, ".", regex.as_ref()),
+            Some(0)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\s")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
             .build()
             .ok();
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\\s", regex.as_ref()), Some(5));
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "\\s",
+                regex.as_ref()
+            ),
+            Some(5)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\sLéopard\n.*")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -513,7 +639,13 @@ mod tests {
             .build()
             .ok();
         assert_eq!(
-            find(&mut c, &mut raw_lines, CaseInsensitive, "\\sLéopard\n.*", regex.as_ref()),
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "\\sLéopard\n.*",
+                regex.as_ref()
+            ),
             Some(12)
         );
     }
@@ -528,11 +660,20 @@ mod tests {
             .case_insensitive(false)
             .build()
             .ok();
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", regex.as_ref()), Some(0));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "L", regex.as_ref()),
+            Some(0)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", regex.as_ref()), Some(13));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "L", regex.as_ref()),
+            Some(13)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", regex.as_ref()), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "L", regex.as_ref()),
+            None
+        );
         c.set(0);
         let regex = RegexBuilder::new("Léopard")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -540,9 +681,15 @@ mod tests {
             .build()
             .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", regex.as_ref()), Some(13));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "Léopard", regex.as_ref()),
+            Some(13)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", regex.as_ref()), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "Léopard", regex.as_ref()),
+            None
+        );
         c.set(0);
         let regex = RegexBuilder::new("老虎")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -550,9 +697,15 @@ mod tests {
             .build()
             .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", regex.as_ref()), Some(6));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "老虎", regex.as_ref()),
+            Some(6)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", regex.as_ref()), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "老虎", regex.as_ref()),
+            None
+        );
         c.set(0);
         let regex = RegexBuilder::new("Tiger")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -560,7 +713,10 @@ mod tests {
             .build()
             .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Tiger", regex.as_ref()), None);
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "Tiger", regex.as_ref()),
+            None
+        );
         c.set(0);
         let regex = RegexBuilder::new(".")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -568,21 +724,36 @@ mod tests {
             .build()
             .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, ".", regex.as_ref()), Some(0));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, ".", regex.as_ref()),
+            Some(0)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\s")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(false)
             .build()
             .ok();
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "\\s", regex.as_ref()), Some(5));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, Exact, "\\s", regex.as_ref()),
+            Some(5)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\sLéopard\n.*")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(false)
             .build()
             .ok();
-        assert_eq!(find(&mut c, &mut raw_lines, Exact, "\\sLéopard\n.*", regex.as_ref()), Some(12));
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                Exact,
+                "\\sLéopard\n.*",
+                regex.as_ref()
+            ),
+            Some(12)
+        );
     }
 
     #[test]
@@ -595,13 +766,25 @@ mod tests {
         let a = Rope::from(&s);
         let mut c = Cursor::new(&a, 0);
         let mut raw_lines = a.lines_raw(0..a.len());
-        let regex =
-            RegexBuilder::new("L").size_limit(REGEX_SIZE_LIMIT).case_insensitive(true).build().ok();
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()), Some(4000));
+        let regex = RegexBuilder::new("L")
+            .size_limit(REGEX_SIZE_LIMIT)
+            .case_insensitive(true)
+            .build()
+            .ok();
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()),
+            Some(4000)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()), Some(4013));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()),
+            Some(4013)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()), Some(4029));
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, "L", regex.as_ref()),
+            Some(4029)
+        );
         c.set(0);
         let mut raw_lines = a.lines_raw(0..a.len());
         let regex = RegexBuilder::new("Léopard")
@@ -610,11 +793,26 @@ mod tests {
             .build()
             .ok();
         assert_eq!(
-            find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", regex.as_ref()),
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "Léopard",
+                regex.as_ref()
+            ),
             Some(4013)
         );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", regex.as_ref()), None);
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "Léopard",
+                regex.as_ref()
+            ),
+            None
+        );
         c.set(0);
         let regex = RegexBuilder::new("老虎")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -623,11 +821,26 @@ mod tests {
             .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(
-            find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", regex.as_ref()),
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "老虎",
+                regex.as_ref()
+            ),
             Some(4006)
         );
         raw_lines = a.lines_raw(c.pos()..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", regex.as_ref()), None);
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "老虎",
+                regex.as_ref()
+            ),
+            None
+        );
         c.set(0);
         let regex = RegexBuilder::new("Tiger")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -635,12 +848,27 @@ mod tests {
             .build()
             .ok();
         let mut raw_lines = a.lines_raw(0..a.len());
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", regex.as_ref()), None);
+        assert_eq!(
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "Tiger",
+                regex.as_ref()
+            ),
+            None
+        );
         c.set(0);
         let mut raw_lines = a.lines_raw(0..a.len());
-        let regex =
-            RegexBuilder::new(".").size_limit(REGEX_SIZE_LIMIT).case_insensitive(true).build().ok();
-        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, ".", regex.as_ref()), Some(0));
+        let regex = RegexBuilder::new(".")
+            .size_limit(REGEX_SIZE_LIMIT)
+            .case_insensitive(true)
+            .build()
+            .ok();
+        assert_eq!(
+            find(&mut c, &mut raw_lines, CaseInsensitive, ".", regex.as_ref()),
+            Some(0)
+        );
         raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\s")
             .size_limit(REGEX_SIZE_LIMIT)
@@ -648,7 +876,13 @@ mod tests {
             .build()
             .ok();
         assert_eq!(
-            find(&mut c, &mut raw_lines, CaseInsensitive, "\\s", regex.as_ref()),
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "\\s",
+                regex.as_ref()
+            ),
             Some(4005)
         );
         raw_lines = a.lines_raw(c.pos()..a.len());
@@ -658,7 +892,13 @@ mod tests {
             .build()
             .ok();
         assert_eq!(
-            find(&mut c, &mut raw_lines, CaseInsensitive, "\\sLéopard\n.*", regex.as_ref()),
+            find(
+                &mut c,
+                &mut raw_lines,
+                CaseInsensitive,
+                "\\sLéopard\n.*",
+                regex.as_ref()
+            ),
             Some(4012)
         );
     }

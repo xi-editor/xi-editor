@@ -22,8 +22,7 @@ use std::path::Path;
 
 use crate::xi_core::ConfigTable;
 use xi_plugin_lib::{mainloop, ChunkCache, Error, Plugin, View};
-use xi_rope::delta::Builder as EditBuilder;
-use xi_rope::interval::Interval;
+use xi_rope::delta::DeltaBuilder as EditBuilder;
 use xi_rope::rope::RopeDelta;
 
 /// A type that implements the `Plugin` trait, and interacts with xi-core.
@@ -64,9 +63,12 @@ impl Plugin for SamplePlugin {
         //an insert of a single '!', we capitalize the preceding word.
         if let Some(delta) = delta {
             let (iv, _) = delta.summary();
-            let text: String = delta.as_simple_insert().map(String::from).unwrap_or_default();
+            let text: String = delta
+                .as_simple_insert()
+                .map(String::from)
+                .unwrap_or_default();
             if text == "!" {
-                let _ = self.capitalize_word(view, iv.end());
+                let _ = self.capitalize_word(view, iv.end);
             }
         }
     }
@@ -96,7 +98,7 @@ impl SamplePlugin {
         let new_text = view.get_line(line_nb)?[word_start..end_offset - line_start].to_uppercase();
         let buf_size = view.get_buf_size();
         let mut builder = EditBuilder::new(buf_size);
-        let iv = Interval::new(line_start + word_start, end_offset);
+        let iv = line_start + word_start..end_offset;
         builder.replace(iv, new_text.into());
         view.edit(builder.build(), 0, false, true, "sample".into());
         Ok(())

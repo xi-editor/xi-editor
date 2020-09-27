@@ -18,11 +18,14 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use xi_rope::diff::{Diff, LineHashDiff};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::rope::count_newlines;
 use xi_rope::spans::SpansBuilder;
-use xi_rope::{DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
+use xi_rope::{
+    diff::{Diff, LineHashDiff},
+    spans::Span,
+};
+use xi_rope::{DeltaBuilder, LinesMetric, Rope, RopeDelta, Transformer};
 use xi_trace::{trace_block, trace_payload};
 
 use crate::annotations::{AnnotationType, Annotations};
@@ -154,7 +157,8 @@ impl Editor {
     }
 
     pub(crate) fn is_pristine(&self) -> bool {
-        self.engine.is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
+        self.engine
+            .is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
     }
 
     /// Set whether or not edits are forced into the same undo group rather than being split by
@@ -163,7 +167,11 @@ impl Editor {
     /// This is used for things such as recording playback, where you don't want the
     /// individual events to be undoable, but instead the entire playback should be.
     pub(crate) fn set_force_undo_group(&mut self, force_undo_group: bool) {
-        trace_payload("Editor::set_force_undo_group", &["core"], force_undo_group.to_string());
+        trace_payload(
+            "Editor::set_force_undo_group",
+            &["core"],
+            force_undo_group.to_string(),
+        );
         self.force_undo_group = force_undo_group;
     }
 
@@ -203,7 +211,8 @@ impl Editor {
         let undo_group = self.calculate_undo_group();
         self.last_edit_type = self.this_edit_type;
         let priority = 0x10000;
-        self.engine.edit_rev(priority, undo_group, head_rev_id.token(), delta);
+        self.engine
+            .edit_rev(priority, undo_group, head_rev_id.token(), delta);
         self.text = self.engine.get_head().clone();
     }
 
@@ -233,7 +242,13 @@ impl Editor {
     pub fn apply_plugin_edit(&mut self, edit: PluginEdit) {
         let _t = trace_block("Editor::apply_plugin_edit", &["core"]);
         //TODO: get priority working, so that plugin edits don't necessarily move cursor
-        let PluginEdit { rev, delta, priority, undo_group, .. } = edit;
+        let PluginEdit {
+            rev,
+            delta,
+            priority,
+            undo_group,
+            ..
+        } = edit;
         let priority = priority as usize;
         let undo_group = undo_group.unwrap_or_else(|| self.calculate_undo_group());
         match self.engine.try_edit_rev(priority, undo_group, rev, delta) {
@@ -254,7 +269,10 @@ impl Editor {
         }
 
         let last_token = self.last_rev_id.token();
-        let delta = self.engine.try_delta_rev_head(last_token).expect("last_rev not found");
+        let delta = self
+            .engine
+            .try_delta_rev_head(last_token)
+            .expect("last_rev not found");
         // TODO (performance): it's probably quicker to stash last_text
         // rather than resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
@@ -361,7 +379,7 @@ impl Editor {
         } else {
             let mut builder = DeltaBuilder::new(self.text.len());
             for (sel, line) in view.sel_regions().iter().zip(chars.lines()) {
-                let iv = Interval::new(sel.min(), sel.max());
+                let iv = sel.min()..sel.max();
                 builder.replace(iv, line.into());
             }
             self.add_delta(builder.build());
@@ -521,8 +539,11 @@ impl Editor {
             .unwrap_or(false);
 
         self.add_delta(delta);
-        self.this_edit_type =
-            if regions.len() > 1 || condition { EditType::Indent } else { EditType::InsertChars };
+        self.this_edit_type = if regions.len() > 1 || condition {
+            EditType::Indent
+        } else {
+            EditType::InsertChars
+        };
     }
 
     fn do_yank(&mut self, view: &View, kill_ring: &Rope) {
@@ -608,14 +629,14 @@ impl Editor {
         let mut end_offset = start + len;
         let mut sb = SpansBuilder::new(len);
         for span in spans {
-            sb.add_span(Interval::new(span.start, span.end), span.scope_id);
+            sb.add(Span::new(span.start..span.end, span.scope_id));
         }
         let mut spans = sb.build();
         if rev != self.engine.get_head_rev_id().token() {
             if let Ok(delta) = self.engine.try_delta_rev_head(rev) {
                 let mut transformer = Transformer::new(&delta);
                 let new_start = transformer.transform(start, false);
-                if !transformer.interval_untouched(Interval::new(start, end_offset)) {
+                if !transformer.interval_untouched(start..end_offset) {
                     spans = spans.transform(start, end_offset, &mut transformer);
                 }
                 start = new_start;
@@ -624,7 +645,7 @@ impl Editor {
                 error!("Revision {} not found", rev);
             }
         }
-        let iv = Interval::new(start, end_offset);
+        let iv = start..end_offset;
         self.layers.update_layer(plugin, iv, spans);
         view.invalidate_styles(&self.text, start, end_offset);
     }
@@ -645,14 +666,14 @@ impl Editor {
         let mut end_offset = start + len;
         let mut sb = SpansBuilder::new(len);
         for span in annotation_spans {
-            sb.add_span(Interval::new(span.start, span.end), span.data);
+            sb.add(Span::new(span.start..span.end, span.data));
         }
         let mut spans = sb.build();
         if rev != self.engine.get_head_rev_id().token() {
             if let Ok(delta) = self.engine.try_delta_rev_head(rev) {
                 let mut transformer = Transformer::new(&delta);
                 let new_start = transformer.transform(start, false);
-                if !transformer.interval_untouched(Interval::new(start, end_offset)) {
+                if !transformer.interval_untouched(start..end_offset) {
                     spans = spans.transform(start, end_offset, &mut transformer);
                 }
                 start = new_start;
@@ -661,8 +682,15 @@ impl Editor {
                 error!("Revision {} not found", rev);
             }
         }
-        let iv = Interval::new(start, end_offset);
-        view.update_annotations(plugin, iv, Annotations { items: spans, annotation_type });
+        let iv = start..end_offset;
+        view.update_annotations(
+            plugin,
+            iv,
+            Annotations {
+                items: spans,
+                annotation_type,
+            },
+        );
     }
 
     pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<Rope>> {
@@ -704,7 +732,12 @@ impl Editor {
         let first_line = text.line_of_offset(offset);
         let first_line_offset = offset - text.offset_of_line(first_line);
 
-        Some(GetDataResponse { chunk, offset, first_line, first_line_offset })
+        Some(GetDataResponse {
+            chunk,
+            offset,
+            first_line,
+            first_line_offset,
+        })
     }
 }
 

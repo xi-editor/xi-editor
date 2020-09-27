@@ -14,10 +14,10 @@
 
 //! Functions for editing ropes.
 
-use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::{borrow::Cow, ops::Range};
 
-use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta};
+use xi_rope::{Cursor, DeltaBuilder, LinesMetric, Rope, RopeDelta};
 
 use crate::backspace::offset_for_delete_backwards;
 use crate::config::BufferItems;
@@ -38,7 +38,7 @@ pub fn insert<T: Into<Rope>>(base: &Rope, regions: &[SelRegion], text: T) -> Rop
     let rope = text.into();
     let mut builder = DeltaBuilder::new(base.len());
     for region in regions {
-        let iv = Interval::new(region.min(), region.max());
+        let iv = region.min()..region.max();
         builder.replace(iv, rope.clone());
     }
 
@@ -60,9 +60,9 @@ where
     let before_rope = before_text.into();
     let after_rope = after_text.into();
     for region in regions {
-        let before_iv = Interval::new(region.min(), region.min());
+        let before_iv = region.min()..region.min();
         builder.replace(before_iv, before_rope.clone());
-        let after_iv = Interval::new(region.max(), region.max());
+        let after_iv = region.max()..region.max();
         builder.replace(after_iv, after_rope.clone());
     }
 
@@ -95,8 +95,8 @@ pub fn duplicate_line(base: &Rope, regions: &[SelRegion], config: &BufferItems) 
 
     for (start, end) in to_duplicate {
         // insert duplicates
-        let iv = Interval::new(start, start);
-        builder.replace(iv, base.slice(start..end));
+        let iv = start..start;
+        builder.replace(iv.clone(), base.slice(start..end));
 
         // last line does not have new line character so it needs to be manually added
         if end == base.len() {
@@ -114,7 +114,7 @@ pub fn delete_backward(base: &Rope, regions: &[SelRegion], config: &BufferItems)
     let mut builder = DeltaBuilder::new(base.len());
     for region in regions {
         let start = offset_for_delete_backwards(&region, base, &config);
-        let iv = Interval::new(start, region.max());
+        let iv = start..region.max();
         if !iv.is_empty() {
             builder.delete(iv);
         }
@@ -168,7 +168,7 @@ pub(crate) fn delete_by_movement(
 pub(crate) fn delete_sel_regions(base: &Rope, sel_regions: &[SelRegion]) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     for region in sel_regions {
-        let iv = Interval::new(region.min(), region.max());
+        let iv = region.min()..region.max();
         if !iv.is_empty() {
             builder.delete(iv);
         }
@@ -213,7 +213,7 @@ pub fn insert_tab(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> R
         if line_range.len() > 1 {
             for line in line_range {
                 let offset = LogicalLines.line_col_to_offset(base, line, 0);
-                let iv = Interval::new(offset, offset);
+                let iv = offset..offset;
                 builder.replace(iv, Rope::from(const_tab_text));
             }
         } else {
@@ -222,7 +222,7 @@ pub fn insert_tab(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> R
             tab_size = tab_size - (col % tab_size);
             let tab_text = get_tab_text(config, Some(tab_size));
 
-            let iv = Interval::new(region.min(), region.max());
+            let iv = region.min()..region.max();
             builder.replace(iv, Rope::from(tab_text));
         }
     }
@@ -259,7 +259,7 @@ fn indent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     for line in lines {
         let offset = LogicalLines.line_col_to_offset(base, line, 0);
-        let interval = Interval::new(offset, offset);
+        let interval = offset..offset;
         builder.replace(interval, Rope::from(tab_text));
     }
     builder.build()
@@ -270,13 +270,13 @@ fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
     for line in lines {
         let offset = LogicalLines.line_col_to_offset(base, line, 0);
         let tab_offset = LogicalLines.line_col_to_offset(base, line, tab_text.len());
-        let interval = Interval::new(offset, tab_offset);
-        let leading_slice = base.slice_to_cow(interval.start()..interval.end());
+        let interval = offset..tab_offset;
+        let leading_slice = base.slice_to_cow(interval.start..interval.end);
         if leading_slice == tab_text {
             builder.delete(interval);
         } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
             let first_char_offset = LogicalLines.line_col_to_offset(base, line, first_char_col);
-            let interval = Interval::new(offset, first_char_offset);
+            let interval = offset..first_char_offset;
             builder.delete(interval);
         }
     }
@@ -286,7 +286,7 @@ fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
 pub fn transpose(base: &Rope, regions: &[SelRegion]) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     let mut last = 0;
-    let mut optional_previous_selection: Option<(Interval, Rope)> =
+    let mut optional_previous_selection: Option<(Range<usize>, Rope)> =
         last_selection_region(regions).map(|&region| sel_region_to_interval_and_rope(base, region));
 
     for &region in regions {
@@ -307,7 +307,7 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> RopeDelta {
                     end = middle.wrapping_add(1);
                 }
 
-                let interval = Interval::new(start, end);
+                let interval = start..end;
                 let before = base.slice_to_cow(start..middle);
                 let after = base.slice_to_cow(middle..end);
                 let swapped: String = [after, before].concat();
@@ -316,7 +316,7 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> RopeDelta {
             }
         } else if let Some(previous_selection) = optional_previous_selection {
             let current_interval = sel_region_to_interval_and_rope(base, region);
-            builder.replace(current_interval.0, previous_selection.1);
+            builder.replace(current_interval.0.clone(), previous_selection.1);
             optional_previous_selection = Some(current_interval);
         }
     }
@@ -333,7 +333,7 @@ pub fn transform_text<F: Fn(&str) -> String>(
 
     for region in regions {
         let selected_text = base.slice_to_cow(region);
-        let interval = Interval::new(region.min(), region.max());
+        let interval = region.min()..region.max();
         builder.replace(interval, Rope::from(transform_function(&selected_text)));
     }
 
@@ -369,7 +369,7 @@ pub fn change_number<F: Fn(i128) -> Option<i128>>(
 
         let word = base.slice_to_cow(start..end);
         if let Some(number) = word.parse::<i128>().ok().and_then(&transform_function) {
-            let interval = Interval::new(start, end);
+            let interval = start..end;
             builder.replace(interval, Rope::from(number.to_string()));
         }
     }
@@ -391,7 +391,7 @@ pub fn capitalize_text(base: &Rope, regions: &[SelRegion]) -> (RopeDelta, Select
             let (start, end) = word_cursor.select_word();
 
             if start < end {
-                let interval = Interval::new(start, end);
+                let interval = start..end;
                 let word = base.slice_to_cow(start..end);
 
                 // first letter is uppercase, remaining letters are lowercase
@@ -409,9 +409,9 @@ pub fn capitalize_text(base: &Rope, regions: &[SelRegion]) -> (RopeDelta, Select
     (builder.build(), final_selection)
 }
 
-fn sel_region_to_interval_and_rope(base: &Rope, region: SelRegion) -> (Interval, Rope) {
-    let as_interval = Interval::new(region.min(), region.max());
-    let interval_rope = base.subseq(as_interval);
+fn sel_region_to_interval_and_rope(base: &Rope, region: SelRegion) -> (Range<usize>, Rope) {
+    let as_interval = region.min()..region.max();
+    let interval_rope = base.subseq(as_interval.clone());
     (as_interval, interval_rope)
 }
 
@@ -426,7 +426,11 @@ fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
 
 fn get_tab_text(config: &BufferItems, tab_size: Option<usize>) -> &'static str {
     let tab_size = tab_size.unwrap_or(config.tab_size);
-    let tab_text = if config.translate_tabs_to_spaces { n_spaces(tab_size) } else { "\t" };
+    let tab_text = if config.translate_tabs_to_spaces {
+        n_spaces(tab_size)
+    } else {
+        "\t"
+    };
 
     tab_text
 }

@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{self, Value};
 
-use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta};
+use xi_rope::{Cursor, LinesMetric, Rope, RopeDelta};
 use xi_rpc::{Error as RpcError, RemoteError};
 use xi_trace::trace_block;
 
@@ -120,9 +120,10 @@ impl<'a> EventContext<'a> {
                     recorder.toggle_recording(recording_name.clone());
                 }
                 // Don't save special events
-                (true, EventDomain::Special(_)) => {
-                    warn!("Special events cannot be recorded-- ignoring event {:?}", event)
-                }
+                (true, EventDomain::Special(_)) => warn!(
+                    "Special events cannot be recorded-- ignoring event {:?}",
+                    event
+                ),
                 (true, event) => recorder.record(event.clone()),
                 _ => {}
             }
@@ -166,15 +167,16 @@ impl<'a> EventContext<'a> {
             }
             SpecialEvent::DebugPrintSpans => self.with_editor(|ed, view, _, _| {
                 let sel = view.sel_regions().last().unwrap();
-                let iv = Interval::new(sel.min(), sel.max());
+                let iv = sel.min()..sel.max();
                 ed.get_layers().debug_print_spans(iv);
             }),
             SpecialEvent::RequestLines(LineRange { first, last }) => {
                 self.do_request_lines(first as usize, last as usize)
             }
-            SpecialEvent::RequestHover { request_id, position } => {
-                self.do_request_hover(request_id, position)
-            }
+            SpecialEvent::RequestHover {
+                request_id,
+                position,
+            } => self.do_request_hover(request_id, position),
             SpecialEvent::DebugToggleComment => self.do_debug_toggle_comment(),
             SpecialEvent::Reindent => self.do_reindent(),
             SpecialEvent::ToggleRecording(_) => {}
@@ -204,7 +206,11 @@ impl<'a> EventContext<'a> {
                 // The action that follows the block must belong to a separate undo group
                 self.editor.borrow_mut().update_edit_type();
 
-                let delta = self.editor.borrow_mut().delta_rev_head(starting_revision).unwrap();
+                let delta = self
+                    .editor
+                    .borrow_mut()
+                    .delta_rev_head(starting_revision)
+                    .unwrap();
                 self.update_plugins(&mut self.editor.borrow_mut(), delta, "core");
             }
             SpecialEvent::ClearRecording(recording_name) => {
@@ -233,23 +239,37 @@ impl<'a> EventContext<'a> {
                 let style_map = self.style_map.borrow();
                 ed.get_layers_mut().add_scopes(plugin, scopes, &style_map);
             }
-            UpdateSpans { start, len, spans, rev } => self.with_editor(|ed, view, _, _| {
+            UpdateSpans {
+                start,
+                len,
+                spans,
+                rev,
+            } => self.with_editor(|ed, view, _, _| {
                 ed.update_spans(view, plugin, start, len, spans, rev)
             }),
             Edit { edit } => self.with_editor(|ed, _, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
-            AddStatusItem { key, value, alignment } => {
+            AddStatusItem {
+                key,
+                value,
+                alignment,
+            } => {
                 let plugin_name = &self.plugins.iter().find(|p| p.id == plugin).unwrap().name;
-                self.client.add_status_item(self.view_id, plugin_name, &key, &value, &alignment);
+                self.client
+                    .add_status_item(self.view_id, plugin_name, &key, &value, &alignment);
             }
             UpdateStatusItem { key, value } => {
                 self.client.update_status_item(self.view_id, &key, &value)
             }
-            UpdateAnnotations { start, len, spans, annotation_type, rev } => {
-                self.with_editor(|ed, view, _, _| {
-                    ed.update_annotations(view, plugin, start, len, spans, annotation_type, rev)
-                })
-            }
+            UpdateAnnotations {
+                start,
+                len,
+                spans,
+                annotation_type,
+                rev,
+            } => self.with_editor(|ed, view, _, _| {
+                ed.update_annotations(view, plugin, start, len, spans, annotation_type, rev)
+            }),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
             ShowHover { request_id, result } => self.do_show_hover(request_id, result),
         };
@@ -261,9 +281,15 @@ impl<'a> EventContext<'a> {
         use self::PluginRequest::*;
         match cmd {
             LineCount => json!(self.editor.borrow().plugin_n_lines()),
-            GetData { start, unit, max_size, rev } => {
-                json!(self.editor.borrow().plugin_get_data(start, unit, max_size, rev))
-            }
+            GetData {
+                start,
+                unit,
+                max_size,
+                rev,
+            } => json!(self
+                .editor
+                .borrow()
+                .plugin_get_data(start, unit, max_size, rev)),
             GetSelections => json!("not implemented"),
         }
     }
@@ -315,7 +341,11 @@ impl<'a> EventContext<'a> {
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
         // don't send the actual delta if it is too large, by some heuristic
         let approx_size = delta.inserts_len() + (delta.els.len() * 10);
-        let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
+        let delta = if approx_size > MAX_SIZE_LIMIT {
+            None
+        } else {
+            Some(delta)
+        };
 
         let undo_group = ed.get_active_undo_group();
         //TODO: we want to just put EditType on the wire, but don't want
@@ -405,9 +435,13 @@ impl<'a> EventContext<'a> {
         let available_plugins = self
             .plugins
             .iter()
-            .map(|plugin| ClientPluginInfo { name: plugin.name.clone(), running: true })
+            .map(|plugin| ClientPluginInfo {
+                name: plugin.name.clone(),
+                running: true,
+            })
             .collect::<Vec<_>>();
-        self.client.available_plugins(self.view_id, &available_plugins);
+        self.client
+            .available_plugins(self.view_id, &available_plugins);
 
         self.client.config_changed(self.view_id, config);
         self.client.language_changed(self.view_id, &self.language);
@@ -427,7 +461,9 @@ impl<'a> EventContext<'a> {
 
     pub(crate) fn after_save(&mut self, path: &Path) {
         // notify plugins
-        self.plugins.iter().for_each(|plugin| plugin.did_save(self.view_id, path));
+        self.plugins
+            .iter()
+            .for_each(|plugin| plugin.did_save(self.view_id, path));
 
         self.editor.borrow_mut().set_pristine();
         self.with_view(|view, text| view.set_dirty(text));
@@ -438,7 +474,9 @@ impl<'a> EventContext<'a> {
     pub(crate) fn close_view(&self) -> bool {
         // we probably want to notify plugins _before_ we close the view
         // TODO: determine what plugins we're stopping
-        self.plugins.iter().for_each(|plug| plug.close_view(self.view_id));
+        self.plugins
+            .iter()
+            .for_each(|plug| plug.close_view(self.view_id));
         self.siblings.is_empty()
     }
 
@@ -451,21 +489,28 @@ impl<'a> EventContext<'a> {
             // case, getting the unit width for a typeface and multiplying that by
             // a string's unicode width.
             if changes.contains_key("word_wrap") {
-                debug!("clearing {} items from width cache", self.width_cache.borrow().len());
+                debug!(
+                    "clearing {} items from width cache",
+                    self.width_cache.borrow().len()
+                );
                 self.width_cache.replace(WidthCache::new());
             }
             self.update_wrap_settings(true);
         }
 
         self.client.config_changed(self.view_id, &changes);
-        self.plugins.iter().for_each(|plug| plug.config_changed(self.view_id, &changes));
+        self.plugins
+            .iter()
+            .for_each(|plug| plug.config_changed(self.view_id, &changes));
         self.render()
     }
 
     pub(crate) fn language_changed(&mut self, new_language_id: &LanguageId) {
         self.language = new_language_id.clone();
         self.client.language_changed(self.view_id, new_language_id);
-        self.plugins.iter().for_each(|plug| plug.language_changed(self.view_id, new_language_id));
+        self.plugins
+            .iter()
+            .for_each(|plug| plug.language_changed(self.view_id, new_language_id));
     }
 
     pub(crate) fn reload(&mut self, text: Rope) {
@@ -574,7 +619,12 @@ impl<'a> EventContext<'a> {
         let mut view = self.view.borrow_mut();
         let ed = self.editor.borrow();
         let mut width_cache = self.width_cache.borrow_mut();
-        view.rewrap(ed.get_buffer(), &mut width_cache, self.client, ed.get_layers().get_merged());
+        view.rewrap(
+            ed.get_buffer(),
+            &mut width_cache,
+            self.client,
+            ed.get_layers().get_merged(),
+        );
     }
 
     /// Does incremental find.
@@ -649,8 +699,10 @@ impl<'a> EventContext<'a> {
             match (prev, line_range) {
                 (None, range) => prev_range = Some(range),
                 (Some(ref prev), ref range) if range.start <= prev.end => {
-                    let combined =
-                        Range { start: prev.start.min(range.start), end: prev.end.max(range.end) };
+                    let combined = Range {
+                        start: prev.start.min(range.start),
+                        end: prev.end.max(range.end),
+                    };
                     prev_range = Some(combined);
                 }
                 (Some(prev), range) => {
@@ -694,7 +746,8 @@ impl<'a> EventContext<'a> {
         match hover {
             Ok(hover) => {
                 // TODO: Get Range from hover here and use it to highlight text
-                self.client.show_hover(self.view_id, request_id, hover.content)
+                self.client
+                    .show_hover(self.view_id, request_id, hover.content)
             }
             Err(err) => warn!("Hover Response from Client Error {:?}", err),
         }
@@ -1968,7 +2021,7 @@ mod tests {
         let mut ctx = harness.make_context();
         let rev_token = ctx.editor.borrow().get_head_rev_token();
 
-        let iv = Interval::new(1, 1);
+        let iv = 1..1;
         let mut builder = DeltaBuilder::new(0); // wrong length
         builder.replace(iv, "1".into());
 
