@@ -16,16 +16,13 @@
 //! annotations. It is parameterized over a data type, so can be used for
 //! storing different annotations.
 
-use std::{fmt, marker::PhantomData, mem, ops::Range};
+use std::{fmt, marker::PhantomData, ops::Range};
 
 use crate::{
     delta::{Delta, DeltaElement, Transformer},
     interval::{Interval, IntervalBounds},
     tree::{Cursor, Leaf, Node, NodeInfo, TreeBuilder},
 };
-
-const MIN_LEAF: usize = 32;
-const MAX_LEAF: usize = 64;
 
 pub type Spans<T> = Node<SpansInfo<T>>;
 
@@ -59,30 +56,43 @@ pub struct SpansLeaf<T: Clone> {
 // See: https://github.com/rust-lang/rust/issues/26925
 impl<T: Clone> Default for SpansLeaf<T> {
     fn default() -> Self {
-        SpansLeaf { len: 0, spans: vec![] }
+        SpansLeaf {
+            len: 0,
+            spans: vec![],
+        }
     }
 }
 
 impl<T: Clone> Leaf for SpansLeaf<T> {
+    const MAX_LEAF: usize = 64;
+    const MIN_LEAF: usize = 32;
+
     fn len(&self) -> usize {
         self.len
     }
 
     fn is_ok_child(&self) -> bool {
-        self.spans.len() >= MIN_LEAF
+        self.spans.len() >= Self::MIN_LEAF
     }
 
     fn push_maybe_split(&mut self, other: &Self, iv: Range<usize>) -> Option<Self> {
         for span in &other.spans {
-            let span_iv = span.iv.intersect(&iv).translate_neg(iv.start).translate(self.len);
+            let span_iv = span
+                .iv
+                .intersect(&iv)
+                .translate_neg(iv.start)
+                .translate(self.len);
 
             if !span_iv.is_empty() {
-                self.spans.push(Span { iv: span_iv, data: span.data.clone() });
+                self.spans.push(Span {
+                    iv: span_iv,
+                    data: span.data.clone(),
+                });
             }
         }
         self.len += iv.size();
 
-        if self.spans.len() <= MAX_LEAF {
+        if self.spans.len() <= Self::MAX_LEAF {
             None
         } else {
             let splitpoint = self.spans.len() / 2; // number of spans
@@ -93,7 +103,10 @@ impl<T: Clone> Leaf for SpansLeaf<T> {
             }
             let new_len = self.len - splitpoint_units;
             self.len = splitpoint_units;
-            Some(SpansLeaf { len: new_len, spans: new })
+            Some(SpansLeaf {
+                len: new_len,
+                spans: new,
+            })
         }
     }
 }
@@ -111,7 +124,11 @@ impl<T: Clone> NodeInfo for SpansInfo<T> {
         for span in &l.spans {
             iv = iv.union(&span.iv)
         }
-        SpansInfo { n_spans: l.spans.len(), iv, phantom: PhantomData }
+        SpansInfo {
+            n_spans: l.spans.len(),
+            iv,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -124,19 +141,28 @@ pub struct SpansBuilder<T: Clone> {
 
 impl<T: Clone> SpansBuilder<T> {
     pub fn new(total_len: usize) -> Self {
-        SpansBuilder { b: TreeBuilder::new(), leaf: SpansLeaf::default(), len: 0, total_len }
+        SpansBuilder {
+            b: TreeBuilder::new(),
+            leaf: SpansLeaf::default(),
+            len: 0,
+            total_len,
+        }
     }
 
     // Precondition: spans must be added in nondecreasing start order.
+    // Maybe take Span struct instead of separate iv, data args?
     fn add_span<IV: IntervalBounds>(&mut self, iv: IV, data: T) {
         let iv = iv.into_interval(self.total_len);
-        if self.leaf.spans.len() == MAX_LEAF {
-            let mut leaf = mem::take(&mut self.leaf);
+        if self.leaf.spans.len() == SpansLeaf::<T>::MAX_LEAF {
+            let mut leaf = std::mem::take(&mut self.leaf);
             leaf.len = iv.start - self.len;
             self.len = iv.start;
             self.b.push(Node::from_leaf(leaf));
         }
-        self.leaf.spans.push(Span { iv: iv.translate_neg(self.len), data })
+        self.leaf.spans.push(Span {
+            iv: iv.translate_neg(self.len),
+            data,
+        })
     }
 
     pub fn add(&mut self, span: Span<T>) {
@@ -178,7 +204,10 @@ impl<T: Clone> Spans<T> {
             let start = xform.transform(span.iv.start + base_start, false) - new_start;
             let end = xform.transform(span.iv.end + base_start, false) - new_start;
             if start < end {
-                let span = Span { iv: start..end, data: span.data };
+                let span = Span {
+                    iv: start..end,
+                    data: span.data,
+                };
                 // TODO: could imagine using a move iterator and avoiding clone, but it's not easy.
                 builder.add(span);
             }
@@ -197,6 +226,9 @@ impl<T: Clone> Spans<T> {
     /// # Panics
     ///
     /// Panics if `self` and `other` have different lengths.
+    // merging 1 1 1 1 1 1 1 1 1 16
+    // with    2 2 4 4     8 8
+    // ==      3 3 5 5 1 1 9 9 1 16
     pub fn merge<F, O>(&self, other: &Self, mut f: F) -> Spans<O>
     where
         F: FnMut(T, Option<T>) -> O,
@@ -220,22 +252,38 @@ impl<T: Clone> Spans<T> {
                 break;
             } else if next_red.is_none() != next_blue.is_none() {
                 // one side is exhausted; append remaining items from other side.
-                let iter = if next_red.is_some() { iter_red } else { iter_blue };
+                let iter = if next_red.is_some() {
+                    iter_red
+                } else {
+                    iter_blue
+                };
                 // add this item
                 let span = next_red.or(next_blue).unwrap();
-                let span = Span { iv: span.iv, data: f(span.data, None) };
+                let span = Span {
+                    iv: span.iv,
+                    data: f(span.data, None),
+                };
                 sb.add(span);
 
                 for span in iter {
-                    let span = Span { iv: span.iv, data: f(span.data, None) };
+                    let span = Span {
+                        iv: span.iv,
+                        data: f(span.data, None),
+                    };
                     sb.add(span);
                 }
                 break;
             }
 
             // body:
-            let Span { iv: mut red_iv, data: red_val } = next_red.clone().unwrap();
-            let Span { iv: mut blue_iv, data: blue_val } = next_blue.clone().unwrap();
+            let Span {
+                iv: mut red_iv,
+                data: red_val,
+            } = next_red.clone().unwrap();
+            let Span {
+                iv: mut blue_iv,
+                data: blue_val,
+            } = next_blue.clone().unwrap();
 
             if red_iv.intersect(&blue_iv).is_empty() {
                 // spans do not overlap. Add the leading span & advance that iter.
@@ -288,14 +336,20 @@ impl<T: Clone> Spans<T> {
             if red_iv.is_empty() {
                 next_red = iter_red.next();
             } else {
-                let red_span = Span { iv: red_iv, data: red_val };
+                let red_span = Span {
+                    iv: red_iv,
+                    data: red_val,
+                };
                 next_red = Some(red_span);
             }
 
             if blue_iv.is_empty() {
                 next_blue = iter_blue.next();
             } else {
-                let blue_span = Span { iv: blue_iv, data: blue_val };
+                let blue_span = Span {
+                    iv: blue_iv,
+                    data: blue_val,
+                };
                 next_blue = Some(blue_span);
             }
         }
@@ -305,7 +359,10 @@ impl<T: Clone> Spans<T> {
     // possible future: an iterator that takes an interval, so results are the same as
     // taking a subseq on the spans object. Would require specialized Cursor.
     pub fn iter(&self) -> SpanIter<'_, T> {
-        SpanIter { cursor: Cursor::new(self, 0), ix: 0 }
+        SpanIter {
+            cursor: Cursor::new(self, 0),
+            ix: 0,
+        }
     }
 
     /// Applies a generic delta to `self`, inserting empty spans for any
@@ -367,7 +424,10 @@ impl<'a, T: Clone> Iterator for SpanIter<'a, T> {
                 let _ = self.cursor.next_leaf();
                 self.ix = 0;
             }
-            let span = Span { iv: span.iv.translate(leaf_start), data: span.data.clone() };
+            let span = Span {
+                iv: span.iv.translate(leaf_start),
+                data: span.data.clone(),
+            };
             return Some(span);
         }
         None
@@ -386,15 +446,29 @@ mod tests {
         sb.add(Span::new(0..9, 1u32));
         sb.add(Span::new(9..10, 16));
         let red = sb.build();
-
+        // len: 10
+        // spans:
+        //         [0, 9): 1
+        //         [9, 10): 16
         let mut sb = SpansBuilder::new(10);
         sb.add(Span::new(0..2, 2));
         sb.add(Span::new(2..4, 4));
         sb.add(Span::new(6..8, 8));
         let blue = sb.build();
-
+        // len: 10
+        // spans:
+        //         [0, 2): 2
+        //         [2, 4): 4
+        //         [6, 8): 8
         let merged = red.merge(&blue, |r, b| b.map(|b| b + r).unwrap_or(r));
-
+        // len: 10
+        // spans:
+        //         [0, 2): 3
+        //         [2, 4): 5
+        //         [4, 6): 1
+        //         [6, 8): 9
+        //         [8, 9): 1
+        //         [9, 10): 16
         let mut merged_iter = merged.iter();
         let span = merged_iter.next().unwrap();
         assert_eq!(span.iv, (0..2));

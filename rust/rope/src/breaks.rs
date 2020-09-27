@@ -21,8 +21,9 @@ use std::{cmp::min, mem, ops::Range};
 /// A set of indexes. A motivating use is storing line breaks.
 pub type Breaks = Node<BreaksInfo>;
 
-const MIN_LEAF: usize = 32;
-const MAX_LEAF: usize = 64;
+/// The number of breaks.
+#[derive(Clone, Debug)]
+pub struct BreaksInfo(usize);
 
 // Here the base units are arbitrary, but most commonly match the base units
 // of the rope storing the underlying string.
@@ -35,17 +36,16 @@ pub struct BreaksLeaf {
     data: Vec<usize>,
 }
 
-/// The number of breaks.
-#[derive(Clone, Debug)]
-pub struct BreaksInfo(usize);
-
 impl Leaf for BreaksLeaf {
+    const MAX_LEAF: usize = 64;
+    const MIN_LEAF: usize = 32;
+
     fn len(&self) -> usize {
         self.len
     }
 
     fn is_ok_child(&self) -> bool {
-        self.data.len() >= MIN_LEAF
+        self.data.len() >= Self::MIN_LEAF
     }
 
     fn push_maybe_split(&mut self, other: &Self, iv: Range<usize>) -> Option<Self> {
@@ -57,7 +57,7 @@ impl Leaf for BreaksLeaf {
         // the min with other.len() shouldn't be needed
         self.len += min(iv.end, other.len()) - iv.start;
 
-        if self.data.len() <= MAX_LEAF {
+        if self.data.len() <= Self::MAX_LEAF {
             None
         } else {
             let splitpoint = self.data.len() / 2; // number of breaks
@@ -70,7 +70,10 @@ impl Leaf for BreaksLeaf {
 
             let new_len = self.len - splitpoint_units;
             self.len = splitpoint_units;
-            Some(BreaksLeaf { len: new_len, data: new })
+            Some(BreaksLeaf {
+                len: new_len,
+                data: new,
+            })
         }
     }
 }
@@ -92,8 +95,8 @@ impl DefaultMetric for BreaksInfo {
 }
 
 impl BreaksLeaf {
-    /// Exposed for testing.
-    #[doc(hidden)]
+    // Exposed for testing.
+    #[cfg(test)]
     pub fn get_data_cloned(&self) -> Vec<usize> {
         self.data.clone()
     }
@@ -142,10 +145,7 @@ impl Metric<BreaksInfo> for BreaksMetric {
     }
 
     fn next(l: &BreaksLeaf, offset: usize) -> Option<usize> {
-        let n = match l.data.binary_search(&offset) {
-            Ok(n) => n + 1,
-            Err(n) => n,
-        };
+        let n = Self::from_base_units(l, offset);
 
         if n == l.data.len() {
             None
@@ -210,7 +210,10 @@ pub struct BreakBuilder {
 
 impl Default for BreakBuilder {
     fn default() -> Self {
-        BreakBuilder { b: TreeBuilder::new(), leaf: BreaksLeaf::default() }
+        BreakBuilder {
+            b: TreeBuilder::new(),
+            leaf: BreaksLeaf::default(),
+        }
     }
 }
 
@@ -220,7 +223,7 @@ impl BreakBuilder {
     }
 
     pub fn add_break(&mut self, len: usize) {
-        if self.leaf.data.len() == MAX_LEAF {
+        if self.leaf.data.len() == BreaksLeaf::MAX_LEAF {
             let leaf = mem::take(&mut self.leaf);
             self.b.push(Node::from_leaf(leaf));
         }
@@ -255,8 +258,7 @@ mod tests {
         }
         for _ in 0..n {
             let len = node.len();
-            let empty_interval_at_end = len..len;
-            node.edit(empty_interval_at_end, testnode.clone());
+            node.edit(len..len, testnode.clone());
         }
         node
     }
@@ -275,7 +277,10 @@ mod tests {
 
     #[test]
     fn one() {
-        let testleaf = BreaksLeaf { len: 10, data: vec![10] };
+        let testleaf = BreaksLeaf {
+            len: 10,
+            data: vec![10],
+        };
         let testnode = Node::<BreaksInfo>::from_leaf(testleaf.clone());
         assert_eq!(10, testnode.len());
         let mut c = Cursor::new(&testnode, 0);
@@ -295,7 +300,7 @@ mod tests {
     fn concat() {
         let left = gen(1);
         let right = gen(1);
-        let node = Node::concat(left.clone(), right);
+        let node = Node::concat(left, right);
         assert_eq!(node.len(), 20);
         let mut c = Cursor::new(&node, 0);
         assert_eq!(10, c.next::<BreaksMetric>().unwrap());

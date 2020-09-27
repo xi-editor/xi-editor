@@ -33,9 +33,6 @@ use crate::{
 use memchr::{memchr, memrchr};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
-const MIN_LEAF: usize = 511;
-const MAX_LEAF: usize = 1024;
-
 /// A rope data structure.
 ///
 /// A [rope](https://en.wikipedia.org/wiki/Rope_(data_structure)) is a data structure
@@ -59,7 +56,7 @@ const MAX_LEAF: usize = 1024;
 /// Create a `Rope` from a `String`:
 ///
 /// ```rust
-/// # use xi_rope::Rope;
+/// # use xcore::Rope;
 /// let a = Rope::from("hello ");
 /// let b = Rope::from("world");
 /// assert_eq!("hello world", String::from(a.clone() + b.clone()));
@@ -69,7 +66,7 @@ const MAX_LEAF: usize = 1024;
 /// Get a slice of a `Rope`:
 ///
 /// ```rust
-/// # use xi_rope::Rope;
+/// # use xcore::Rope;
 /// let a = Rope::from("hello world");
 /// let b = a.slice(1..9);
 /// assert_eq!("ello wor", String::from(&b));
@@ -80,7 +77,7 @@ const MAX_LEAF: usize = 1024;
 /// Replace part of a `Rope`:
 ///
 /// ```rust
-/// # use xi_rope::Rope;
+/// # use xcore::Rope;
 /// let mut a = Rope::from("hello world");
 /// a.edit(1..9, "era");
 /// assert_eq!("herald", String::from(a));
@@ -100,17 +97,20 @@ pub type RopeDelta = Delta<RopeInfo>;
 pub type RopeDeltaElement = DeltaElement<RopeInfo>;
 
 impl Leaf for String {
+    const MAX_LEAF: usize = 1024;
+    const MIN_LEAF: usize = 511;
+
     fn len(&self) -> usize {
         self.len()
     }
 
     fn is_ok_child(&self) -> bool {
-        self.len() >= MIN_LEAF
+        self.len() >= Self::MIN_LEAF
     }
 
     fn push_maybe_split(&mut self, other: &String, iv: Range<usize>) -> Option<String> {
         self.push_str(&other[iv]);
-        if self.len() <= MAX_LEAF {
+        if self.len() <= Self::MAX_LEAF {
             None
         } else {
             let splitpoint = find_leaf_split_for_merge(self);
@@ -131,11 +131,17 @@ impl NodeInfo for RopeInfo {
     }
 
     fn compute_info(s: &String) -> Self {
-        RopeInfo { lines: count_newlines(s), utf16_size: count_utf16_code_units(s) }
+        RopeInfo {
+            lines: count_newlines(s),
+            utf16_size: count_utf16_code_units(s),
+        }
     }
 
     fn identity() -> Self {
-        RopeInfo { lines: 0, utf16_size: 0 }
+        RopeInfo {
+            lines: 0,
+            utf16_size: 0,
+        }
     }
 }
 
@@ -350,16 +356,16 @@ fn count_utf16_code_units(s: &str) -> usize {
 }
 
 fn find_leaf_split_for_bulk(s: &str) -> usize {
-    find_leaf_split(s, MIN_LEAF)
+    find_leaf_split(s, String::MIN_LEAF)
 }
 
 fn find_leaf_split_for_merge(s: &str) -> usize {
-    find_leaf_split(s, max(MIN_LEAF, s.len() - MAX_LEAF))
+    find_leaf_split(s, max(String::MIN_LEAF, s.len() - String::MAX_LEAF))
 }
 
 // Try to split at newline boundary (leaning left), if not, then split at codepoint
 fn find_leaf_split(s: &str, minsplit: usize) -> usize {
-    let mut splitpoint = min(MAX_LEAF, s.len() - MIN_LEAF);
+    let mut splitpoint = min(String::MAX_LEAF, s.len() - String::MIN_LEAF);
     match memrchr(b'\n', &s.as_bytes()[minsplit - 1..splitpoint]) {
         Some(pos) => minsplit + pos,
         None => {
@@ -494,7 +500,10 @@ impl Rope {
     pub fn iter_chunks<T: IntervalBounds>(&self, range: T) -> ChunkIter<'_> {
         let Range { start, end } = range.into_interval(self.len());
 
-        ChunkIter { cursor: Cursor::new(self, start), end }
+        ChunkIter {
+            cursor: Cursor::new(self, start),
+            end,
+        }
     }
 
     /// An iterator over the raw lines. The lines, except the last, include the
@@ -503,7 +512,10 @@ impl Rope {
     /// The return type is a `Cow<str>`, and in most cases the lines are slices
     /// borrowed from the rope.
     pub fn lines_raw<T: IntervalBounds>(&self, range: T) -> LinesRaw<'_> {
-        LinesRaw { inner: self.iter_chunks(range), fragment: "" }
+        LinesRaw {
+            inner: self.iter_chunks(range),
+            fragment: "",
+        }
     }
 
     /// An iterator over the lines of a rope.
@@ -517,7 +529,9 @@ impl Rope {
     ///
     /// The semantics are intended to match `str::lines()`.
     pub fn lines<T: IntervalBounds>(&self, range: T) -> Lines<'_> {
-        Lines { inner: self.lines_raw(range) }
+        Lines {
+            inner: self.lines_raw(range),
+        }
     }
 
     // callers should be encouraged to use cursor instead
@@ -574,14 +588,18 @@ impl TreeBuilder<RopeInfo> {
     /// and pushes the leaves one by one onto the tree by calling
     /// `push_leaf` on the builder.
     pub fn push_str(&mut self, mut s: &str) {
-        if s.len() <= MAX_LEAF {
+        if s.len() <= String::MAX_LEAF {
             if !s.is_empty() {
                 self.push_leaf(s.to_owned());
             }
             return;
         }
         while !s.is_empty() {
-            let splitpoint = if s.len() > MAX_LEAF { find_leaf_split_for_bulk(s) } else { s.len() };
+            let splitpoint = if s.len() > String::MAX_LEAF {
+                find_leaf_split_for_bulk(s)
+            } else {
+                s.len()
+            };
             self.push_leaf(s[..splitpoint].to_owned());
             s = &s[splitpoint..];
         }
@@ -747,7 +765,13 @@ impl<'a> Iterator for LinesRaw<'a> {
             if self.fragment.is_empty() {
                 match self.inner.next() {
                     Some(chunk) => self.fragment = chunk,
-                    None => return if result.is_empty() { None } else { Some(result) },
+                    None => {
+                        return if result.is_empty() {
+                            None
+                        } else {
+                            Some(result)
+                        }
+                    }
                 }
                 if self.fragment.is_empty() {
                     // can only happen on empty input
@@ -832,48 +856,75 @@ mod tests {
     fn lines_small() {
         let a = Rope::from("a\nb\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\nb\n");
         assert_eq!(vec!["a", "b"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("\n");
         assert_eq!(vec![""], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("");
         assert_eq!(0, a.lines(..).count());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\r\nb\r\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\rb\rc");
         assert_eq!(vec!["a\rb\rc"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn lines_med() {
         let mut a = String::new();
         let mut b = String::new();
-        let line_len = MAX_LEAF + MIN_LEAF - 1;
+        let line_len = String::MAX_LEAF + String::MIN_LEAF - 1;
         for _ in 0..line_len {
             a.push('a');
             b.push('b');
         }
         a.push('\n');
         b.push('\n');
-        let r = Rope::from(&a[..MAX_LEAF]);
-        let r = r + Rope::from(String::from(&a[MAX_LEAF..]) + &b[..MIN_LEAF]);
-        let r = r + Rope::from(&b[MIN_LEAF..]);
+        let r = Rope::from(&a[..String::MAX_LEAF]);
+        let r = r + Rope::from(String::from(&a[String::MAX_LEAF..]) + &b[..String::MIN_LEAF]);
+        let r = r + Rope::from(&b[String::MIN_LEAF..]);
         //println!("{:?}", r.iter_chunks().collect::<Vec<_>>());
 
-        assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw(..).collect::<Vec<_>>());
-        assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&r).lines().collect::<Vec<_>>(), r.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            vec![a.as_str(), b.as_str()],
+            r.lines_raw(..).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec![&a[..line_len], &b[..line_len]],
+            r.lines(..).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            String::from(&r).lines().collect::<Vec<_>>(),
+            r.lines(..).collect::<Vec<_>>()
+        );
 
         // additional tests for line indexing
         assert_eq!(a.len(), r.offset_of_line(1));
@@ -1037,16 +1088,16 @@ mod tests {
     fn eq_med() {
         let mut a = String::new();
         let mut b = String::new();
-        let line_len = MAX_LEAF + MIN_LEAF - 1;
+        let line_len = String::MAX_LEAF + String::MIN_LEAF - 1;
         for _ in 0..line_len {
             a.push('a');
             b.push('b');
         }
         a.push('\n');
         b.push('\n');
-        let r = Rope::from(&a[..MAX_LEAF]);
-        let r = r + Rope::from(String::from(&a[MAX_LEAF..]) + &b[..MIN_LEAF]);
-        let r = r + Rope::from(&b[MIN_LEAF..]);
+        let r = Rope::from(&a[..String::MAX_LEAF]);
+        let r = r + Rope::from(String::from(&a[String::MAX_LEAF..]) + &b[..String::MIN_LEAF]);
+        let r = r + Rope::from(&b[String::MIN_LEAF..]);
 
         let a_rope = Rope::from(&a);
         let b_rope = Rope::from(&b);
@@ -1186,7 +1237,7 @@ mod serde_tests {
         const TEST_LINE: &str = "test line\n";
 
         // repeat test line enough times to exceed maximum leaf size
-        let n_seg = MAX_LEAF / TEST_LINE.len() + 1;
+        let n_seg = String::MAX_LEAF / TEST_LINE.len() + 1;
         let test_str = TEST_LINE.repeat(n_seg);
 
         let rope = Rope::from(test_str.as_str());
