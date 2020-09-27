@@ -59,7 +59,7 @@ const MAX_LEAF: usize = 1024;
 /// Create a `Rope` from a `String`:
 ///
 /// ```rust
-/// # use xcore::Rope;
+/// # use xi_rope::Rope;
 /// let a = Rope::from("hello ");
 /// let b = Rope::from("world");
 /// assert_eq!("hello world", String::from(a.clone() + b.clone()));
@@ -69,7 +69,7 @@ const MAX_LEAF: usize = 1024;
 /// Get a slice of a `Rope`:
 ///
 /// ```rust
-/// # use xcore::Rope;
+/// # use xi_rope::Rope;
 /// let a = Rope::from("hello world");
 /// let b = a.slice(1..9);
 /// assert_eq!("ello wor", String::from(&b));
@@ -80,7 +80,7 @@ const MAX_LEAF: usize = 1024;
 /// Replace part of a `Rope`:
 ///
 /// ```rust
-/// # use xcore::Rope;
+/// # use xi_rope::Rope;
 /// let mut a = Rope::from("hello world");
 /// a.edit(1..9, "era");
 /// assert_eq!("herald", String::from(a));

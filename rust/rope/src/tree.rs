@@ -459,7 +459,7 @@ impl<N: DefaultMetric> Node<N> {
     ///
     /// # Examples
     /// ```
-    /// use crate::xcore::{Rope, LinesMetric};
+    /// use crate::xi_rope::{Rope, LinesMetric};
     ///
     /// // the default metric of Rope is BaseMetric (aka number of bytes)
     /// let my_rope = Rope::from("first line \n second line \n");
@@ -476,7 +476,7 @@ impl<N: DefaultMetric> Node<N> {
     ///
     /// # Examples
     /// ```
-    /// use crate::xcore::{Rope, LinesMetric};
+    /// use crate::xi_rope::{Rope, LinesMetric};
     ///
     /// // the default metric of Rope is BaseMetric (aka number of bytes)
     /// let my_rope = Rope::from("first line \n second line \n");
@@ -1052,7 +1052,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// # Examples:
     ///
     /// ```
-    /// # use xcore::{Cursor, LinesMetric, Rope};
+    /// # use xi_rope::{Cursor, LinesMetric, Rope};
     /// #
     /// let text: Rope = "one line\ntwo line\nred line\nblue".into();
     /// let mut cursor = Cursor::new(&text, 0);

@@ -151,8 +151,8 @@ impl<N: NodeInfo> Delta<N> {
     /// Applying the insert then the delete yields the same result as the original delta:
     ///
     /// ```no_run
-    /// # use xcore::rope::{Rope, RopeInfo};
-    /// # use xcore::delta::Delta;
+    /// # use xi_rope::rope::{Rope, RopeInfo};
+    /// # use xi_rope::delta::Delta;
     /// # use std::str::FromStr;
     /// fn test_factor(d : &Delta<RopeInfo>, r : &Rope) {
     ///     let (ins, del) = d.clone().factor();
@@ -208,8 +208,8 @@ impl<N: NodeInfo> Delta<N> {
     /// union string.
     ///
     /// ```no_run
-    /// # use xcore::rope::{Rope, RopeInfo};
-    /// # use xcore::delta::Delta;
+    /// # use xi_rope::rope::{Rope, RopeInfo};
+    /// # use xi_rope::delta::Delta;
     /// # use std::str::FromStr;
     /// fn test_synthesize(d : &Delta<RopeInfo>, r : &Rope) {
     ///     let (ins_d, del) = d.clone().factor();
