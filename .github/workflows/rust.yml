@@ -2,6 +2,8 @@ name: Rust
 
 on:
   push:
+    paths:
+      - 'rust/**'
     branches:
       - master
   pull_request:
