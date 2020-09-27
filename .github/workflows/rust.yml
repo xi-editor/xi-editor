@@ -1,0 +1,76 @@
+name: Rust
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: windows-latest
+    # needs: [compile]
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+      - name: Setup | Rust
+        uses: ATiltedTree/setup-rust@v1.0.4
+        with:
+          rust-version: nightly
+          components: clippy
+      - name: Update
+        run: cargo update
+      - name: Tree
+        run: cargo tree
+      - name: Build | Compile
+        run: cargo check
+      - name: Build | Lint
+        run: cargo clippy
+#   compile:
+#     name: Compile
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Setup | Checkout
+#         uses: actions/checkout@v2
+#       - name: Setup | Rust
+#         uses: ATiltedTree/setup-rust@v1
+#         with:
+#           rust-version: stable
+#       - name: Update
+#         run: cargo update
+#       - name: Tree
+#         run: cargo tree
+#       - name: Build | Compile
+#         run: cargo check
+  test:
+    name: Test
+    strategy:
+      matrix:
+        os:
+        # - ubuntu-latest
+        - windows-latest
+        rust:
+#           - stable
+          - beta
+          - nightly
+    runs-on: ${{ matrix.os }}
+#     needs: [compile]
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2
+      - name: Setup | Rust
+        uses: ATiltedTree/setup-rust@v1.0.4
+        with:
+          rust-version: ${{ matrix.rust }}
+      #     components: clippy
+      # - name: Update
+      #   run: cargo update
+      # - name: Tree
+      #   run: cargo tree
+      # - name: Build | Compile
+      #   run: cargo check
+      # - name: Build | Lint
+      #   run: cargo clippy
+      - name: Build | Compile
+        run: cargo test
