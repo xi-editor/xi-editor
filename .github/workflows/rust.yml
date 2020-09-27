@@ -12,7 +12,6 @@ jobs:
     runs-on: windows-latest
     # needs: [compile]
     steps:
-      - run: cd rust/
       - name: Setup | Checkout
         uses: actions/checkout@v2
       - name: Setup | Rust
@@ -20,6 +19,7 @@ jobs:
         with:
           rust-version: nightly
           components: clippy
+      - run: cd rust/
       - name: Update
         run: cargo update
       - name: Tree
@@ -58,7 +58,6 @@ jobs:
     runs-on: ${{ matrix.os }}
 #     needs: [compile]
     steps:
-      - run: cd rust/
       - name: Setup | Checkout
         uses: actions/checkout@v2
       - name: Setup | Rust
@@ -74,5 +73,6 @@ jobs:
       #   run: cargo check
       # - name: Build | Lint
       #   run: cargo clippy
+      - run: cd rust/
       - name: Build | Compile
         run: cargo test
