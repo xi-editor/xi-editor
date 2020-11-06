@@ -17,7 +17,7 @@ When you open a document that is synced with the ledger you want to do a few thi
 1. Get that page and call `GetSnapshot` to get a snapshot, also register a `PageWatcher` in the same call.
 1. Load the initial state of your document from the page snapshot into your local in-memory state.
 1. Start listening on the `PageWatcher` for updates. It's important to start listening after you load or you might encounter race conditions.
-1. Whenever your `PageWatcher` recieves an update you want to use your CRDT `merge` to merge the updated state into your local state. You don't want to just load it because you may have pending edits in your local state that haven't made it into the ledger yet, see the next section. Make sure you respond to the FIDL message only after you are done incorporating the changes.
+1. Whenever your `PageWatcher` receives an update you want to use your CRDT `merge` to merge the updated state into your local state. You don't want to just load it because you may have pending edits in your local state that haven't made it into the ledger yet, see the next section. Make sure you respond to the FIDL message only after you are done incorporating the changes.
 
 ## Handling Edits
 
