@@ -92,6 +92,96 @@ fn test_state() {
     }
 }
 
+/// Test whether xi-core invalidates cache lines upon a cursor motion.
+#[test]
+fn test_invalidate() {
+    let mut state = XiCore::new();
+    let (tx, mut rx) = test_channel();
+    let mut rpc_looper = RpcLoop::new(tx);
+    let json = make_reader(
+        r#"{"method":"client_started","params":{}}
+{"id":0,"method":"new_view","params":{}}
+"#,
+    );
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+
+    let mut edit_cmds = String::new();
+
+    for i in 1..20 {
+        // add lines "line 1", "line 2",...
+        edit_cmds.push_str(r#"{"method":"edit","params":{"view_id":"view-id-1","method":"insert","params":{"chars":"line "#);
+        edit_cmds.push_str(&i.to_string());
+        edit_cmds.push_str(
+            r#""}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"insert_newline","params":[]}}
+"#,
+        );
+    }
+
+    let json = make_reader(edit_cmds);
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+
+    // jump to line 1, then jump to line 18
+    const MOVEMENTS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1","method":"goto_line","params":{"line":1}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"goto_line","params":{"line":18}}}"#;
+
+    let json = make_reader(MOVEMENTS);
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+
+    let mut last_ops = Vec::new();
+
+    while let Some(Ok(resp)) = rx.next_timeout(std::time::Duration::from_millis(1000)) {
+        if !resp.is_response() && resp.get_method().unwrap() == "update" {
+            let ops = resp.0.as_object().unwrap()["params"].as_object().unwrap()["update"]
+                .as_object()
+                .unwrap()["ops"]
+                .as_array()
+                .unwrap();
+            last_ops = ops.clone();
+
+            // Verify that the "invalidate" ops can only go first or last.
+            if ops.len() > 2 {
+                debug_assert!(
+                    ops.iter()
+                        // step over leading "invalidate" and "skip"
+                        .skip_while(|op| op["op"].as_str().unwrap() == "invalidate"
+                            || op["op"].as_str().unwrap() == "skip")
+                        // current op (ins/copy/update) adds lines;
+                        // wait for another invalidate/skip
+                        .skip_while(|op| op["op"].as_str().unwrap() != "invalidate")
+                        // step over trailing "invalidate" and "skip"
+                        .skip_while(|op| op["op"].as_str().unwrap() == "invalidate"
+                            || op["op"].as_str().unwrap() == "skip")
+                        .next()
+                        .is_none(),
+                    "bad update: ".to_string()
+                        + &ops
+                            .iter()
+                            .map(|op| format!(
+                                "{} {}",
+                                op["op"].as_str().unwrap(),
+                                op["n"].as_u64().unwrap()
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                );
+            }
+        }
+    }
+
+    // Dump the last vector of ops.
+    assert_eq!(
+        last_ops
+            .iter()
+            .map(|op| {
+                let op_in = op.as_object().unwrap();
+                (op_in["op"].as_str().unwrap(), op_in["n"].as_u64().unwrap())
+            })
+            .collect::<Vec<_>>(),
+        [("copy", 1), ("invalidate", 1), ("skip", 1), ("copy", 5), ("copy", 11), ("ins", 1), ("ins", 1)]
+    );
+}
+
 #[test]
 /// Tests that the runloop exits with the correct error when receiving
 /// malformed json.
