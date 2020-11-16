@@ -553,9 +553,10 @@ in more detail below. For this op, `n` must equal `lines.length` (alternative:
 make n optional in this case). It does not update `old_ix`.
 
 The "update" op updates the cursor and/or style of n existing lines. As in
-"ins", n must equal lines.length. It also increments `old_ix` by `n`.
-
-**Note:** The "update" op is not currently used by core.
+"ins", n must equal lines.length. It also increments `old_ix` by `n`. If the
+update modifies the line numbers of the given n lines, the `ln` parameter
+representing the new logical line number of the first line (as in the "copy"
+op) should be present.
 
 In all cases, n is guaranteed positive and nonzero (as a consequence, any line
 present in the old state is copied at most once to the new state).

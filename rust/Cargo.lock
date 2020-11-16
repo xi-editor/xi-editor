@@ -1184,13 +1184,13 @@ dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.110 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.53 (registry+https://github.com/rust-lang/crates.io-index)",
- "xi-core-lib 0.3.0",
+ "xi-core-lib 0.4.0",
  "xi-rpc 0.3.0",
 ]
 
 [[package]]
 name = "xi-core-lib"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "crossbeam-channel 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1219,7 +1219,7 @@ dependencies = [
  "nom 4.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "pom 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "xi-core-lib 0.3.0",
+ "xi-core-lib 0.4.0",
  "xi-plugin-lib 0.1.0",
  "xi-rope 0.3.0",
  "xi-trace 0.2.0",
@@ -1238,7 +1238,7 @@ dependencies = [
  "serde_derive 1.0.110 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.53 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 1.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "xi-core-lib 0.3.0",
+ "xi-core-lib 0.4.0",
  "xi-plugin-lib 0.1.0",
  "xi-rope 0.3.0",
  "xi-rpc 0.3.0",
@@ -1256,7 +1256,7 @@ dependencies = [
  "serde 1.0.110 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.110 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.53 (registry+https://github.com/rust-lang/crates.io-index)",
- "xi-core-lib 0.3.0",
+ "xi-core-lib 0.4.0",
  "xi-rope 0.3.0",
  "xi-rpc 0.3.0",
  "xi-trace 0.2.0",
@@ -1293,7 +1293,7 @@ version = "0.0.0"
 dependencies = [
  "serde 1.0.110 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.110 (registry+https://github.com/rust-lang/crates.io-index)",
- "xi-core-lib 0.3.0",
+ "xi-core-lib 0.4.0",
  "xi-plugin-lib 0.1.0",
  "xi-rope 0.3.0",
  "xi-trace 0.2.0",
@@ -1308,7 +1308,7 @@ dependencies = [
  "serde_json 1.0.53 (registry+https://github.com/rust-lang/crates.io-index)",
  "syntect 3.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "xi-core-lib 0.3.0",
+ "xi-core-lib 0.4.0",
  "xi-plugin-lib 0.1.0",
  "xi-rope 0.3.0",
  "xi-trace 0.2.0",

@@ -612,19 +612,19 @@ impl View {
         !self.selection.regions_in_range(offset, offset).is_empty()
     }
 
-    // Render a single line, and advance cursors to next line.
+    // Encode a single line with its styles and cursors in JSON.
+    // If "text" is not specified, don't add "text" to the output.
+    // If "style_spans" are not specified, don't add "styles" to the output.
     fn render_line(
         &self,
         client: &Client,
         styles: &StyleMap,
-        text: &Rope,
         line: VisualLine,
-        style_spans: &Spans<Style>,
-        line_num: usize,
+        text: Option<&Rope>,
+        style_spans: Option<&Spans<Style>>,
     ) -> Value {
         let start_pos = line.interval.start;
         let pos = line.interval.end;
-        let l_str = text.slice_to_cow(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {
@@ -632,8 +632,20 @@ impl View {
             let c = region.end;
             if (c > start_pos && c < pos)
                 || (!region.is_upstream() && c == start_pos)
-                || (region.is_upstream() && c == pos)
-                || (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
+
+            // TODO: Most likely, "(region.is_upstream() && c == pos)"
+            // is an error. The correct action here is to compare region.start
+            // (not region.end) and affinity against the interval's end point.
+            //
+            //  || (region.is_upstream() && c == pos)
+                || (region.is_upstream() && pos == region.start)
+            // TODO: Not clear why this case is special.
+            // The line overlap with the region should be 100% determined by
+            // region start/end, region affinity, and line start/end.
+            // No special cases here and no dependency on "text".
+            // Comment out the condition for now.
+            //
+            //  || (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
             {
                 cursors.push(c - start_pos);
             }
@@ -662,14 +674,17 @@ impl View {
             }
         }
 
-        let styles =
-            self.render_styles(client, styles, start_pos, pos, &selections, &hls, style_spans);
+        let mut result = json!({});
 
-        let mut result = json!({
-            "text": &l_str,
-            "styles": styles,
-        });
-
+        if let Some(text) = text {
+            let l_str = text.slice_to_cow(start_pos..pos);
+            result["text"] = json!(&l_str);
+        }
+        if let Some(style_spans) = style_spans {
+            let styles =
+                self.render_styles(client, styles, start_pos, pos, &selections, &hls, style_spans);
+            result["styles"] = json!(styles);
+        }
         if !cursors.is_empty() {
             result["cursor"] = json!(cursors);
         }
@@ -790,17 +805,50 @@ impl View {
                     b.add_span(seg.n, 0, 0);
                 }
                 RenderTactic::Preserve => {
-                    // TODO: in the case where it's ALL_VALID & !CURSOR_VALID, and cursors
-                    // are empty, could send update removing the cursor.
-                    if seg.validity == line_cache_shadow::ALL_VALID {
+                    // Depending on the state of TEXT_VALID, STYLES_VALID and
+                    // CURSOR_VALID, perform one of the following actions:
+                    //
+                    //   - All the three are valid => send the "copy" op
+                    //     (+leading "skip" to catch up with "ln" to update);
+                    //
+                    //   - Text and styles are valid, cursors are not => same,
+                    //     but send an "update" op instead of "copy" to move
+                    //     the cursors;
+                    //
+                    //   - Text or styles are invalid => send "invalidate".
+                    if (seg.validity & line_cache_shadow::TEXT_VALID) != 0
+                        && (seg.validity & line_cache_shadow::STYLES_VALID) != 0
+                    {
                         let n_skip = seg.their_line_num - line_num;
                         if n_skip > 0 {
                             ops.push(UpdateOp::skip(n_skip));
                         }
                         let line_offset = self.offset_of_line(text, seg.our_line_num);
-                        let logical_line = text.line_of_offset(line_offset) + 1;
-                        ops.push(UpdateOp::copy(seg.n, logical_line));
-                        b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
+                        let logical_line = text.line_of_offset(line_offset);
+                        if (seg.validity & line_cache_shadow::CURSOR_VALID) != 0 {
+                            // ALL_VALID; copy lines as-is
+                            ops.push(UpdateOp::copy(seg.n, logical_line + 1));
+                        } else {
+                            // !CURSOR_VALID; update cursors
+                            let start_line = seg.our_line_num;
+
+                            let rendered_lines = self
+                                .lines
+                                .iter_lines(text, start_line)
+                                .take(seg.n)
+                                .map(|l| {
+                                    self.render_line(
+                                        client, styles, l, /* text = */ None,
+                                        /* style_spans = */ None,
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+
+                            let logical_line_opt =
+                                if logical_line == 0 { None } else { Some(logical_line + 1) };
+                            ops.push(UpdateOp::update(rendered_lines, logical_line_opt));
+                        }
+                        b.add_span(seg.n, seg.our_line_num, seg.validity);
                         line_num = seg.their_line_num + seg.n;
                     } else {
                         ops.push(UpdateOp::invalidate(seg.n));
@@ -808,16 +856,52 @@ impl View {
                     }
                 }
                 RenderTactic::Render => {
-                    // TODO: update (rather than re-render) in cases of text valid
-                    if seg.validity == line_cache_shadow::ALL_VALID {
+                    // Depending on the state of TEXT_VALID, STYLES_VALID and
+                    // CURSOR_VALID, perform one of the following actions:
+                    //
+                    //   - All three are valid => send the "copy" op
+                    //     (+preceding "skip" to catch up with "ln" to update);
+                    //
+                    //   - Text and styles are valid, cursors are not => same,
+                    //     but send an "update" op instead of "copy" to move
+                    //     the cursors;
+                    //
+                    //   - Text or styles are invalid => re-encode the lines
+                    //     in JSON and send the new content in an "insert" op.
+                    if (seg.validity & line_cache_shadow::TEXT_VALID) != 0
+                        && (seg.validity & line_cache_shadow::STYLES_VALID) != 0
+                    {
                         let n_skip = seg.their_line_num - line_num;
                         if n_skip > 0 {
                             ops.push(UpdateOp::skip(n_skip));
                         }
                         let line_offset = self.offset_of_line(text, seg.our_line_num);
-                        let logical_line = text.line_of_offset(line_offset) + 1;
-                        ops.push(UpdateOp::copy(seg.n, logical_line));
-                        b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
+                        let logical_line = text.line_of_offset(line_offset);
+
+                        if (seg.validity & line_cache_shadow::CURSOR_VALID) != 0 {
+                            // ALL_VALID; copy lines as-is
+                            ops.push(UpdateOp::copy(seg.n, logical_line + 1));
+                        } else {
+                            // !CURSOR_VALID; update cursors
+                            let start_line = seg.our_line_num;
+
+                            let rendered_lines = self
+                                .lines
+                                .iter_lines(text, start_line)
+                                .take(seg.n)
+                                .map(|l| {
+                                    self.render_line(
+                                        client, styles, l, /* text = */ None,
+                                        /* style_spans = */ None,
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+
+                            let logical_line_opt =
+                                if logical_line == 0 { None } else { Some(logical_line + 1) };
+                            ops.push(UpdateOp::update(rendered_lines, logical_line_opt));
+                        }
+                        b.add_span(seg.n, seg.our_line_num, seg.validity);
                         line_num = seg.their_line_num + seg.n;
                     } else {
                         let start_line = seg.our_line_num;
@@ -825,16 +909,8 @@ impl View {
                             .lines
                             .iter_lines(text, start_line)
                             .take(seg.n)
-                            .enumerate()
-                            .map(|(i, l)| {
-                                self.render_line(
-                                    client,
-                                    styles,
-                                    text,
-                                    l,
-                                    style_spans,
-                                    start_line + i,
-                                )
+                            .map(|l| {
+                                self.render_line(client, styles, l, Some(text), Some(style_spans))
                             })
                             .collect::<Vec<_>>();
                         debug_assert_eq!(rendered_lines.len(), seg.n);

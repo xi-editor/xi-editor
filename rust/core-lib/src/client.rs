@@ -271,6 +271,15 @@ impl UpdateOp {
     pub(crate) fn insert(lines: Vec<Value>) -> Self {
         UpdateOp { op: OpType::Insert, n: lines.len(), lines: Some(lines), first_line_number: None }
     }
+
+    pub(crate) fn update(lines: Vec<Value>, line_opt: Option<usize>) -> Self {
+        UpdateOp {
+            op: OpType::Update,
+            n: lines.len(),
+            lines: Some(lines),
+            first_line_number: line_opt,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -281,4 +290,5 @@ enum OpType {
     Skip,
     Invalidate,
     Copy,
+    Update,
 }
