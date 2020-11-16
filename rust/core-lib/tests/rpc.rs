@@ -170,6 +170,7 @@ fn test_invalidate() {
     }
 
     // Dump the last vector of ops.
+    // Verify that there is an "update" op in case of a cursor motion.
     assert_eq!(
         last_ops
             .iter()
@@ -178,7 +179,7 @@ fn test_invalidate() {
                 (op_in["op"].as_str().unwrap(), op_in["n"].as_u64().unwrap())
             })
             .collect::<Vec<_>>(),
-        [("copy", 1), ("invalidate", 1), ("skip", 1), ("copy", 5), ("copy", 11), ("ins", 1), ("ins", 1)]
+        [("copy", 1), ("update", 1), ("copy", 5), ("copy", 11), ("update", 2)]
     );
 }
 
