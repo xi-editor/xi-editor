@@ -219,10 +219,7 @@ impl PlaceholderRpc {
 impl PluginDescription {
     /// Returns `true` if this plugin is globally scoped, else `false`.
     pub fn is_global(&self) -> bool {
-        match self.scope {
-            PluginScope::Global => true,
-            _ => false,
-        }
+        matches!(self.scope, PluginScope::Global)
     }
 }
 

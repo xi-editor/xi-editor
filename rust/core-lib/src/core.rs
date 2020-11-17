@@ -50,10 +50,7 @@ impl XiCore {
 
     /// Returns `true` if the `client_started` has not been received.
     fn is_waiting(&self) -> bool {
-        match *self {
-            XiCore::Waiting => true,
-            _ => false,
-        }
+        matches!(*self, XiCore::Waiting)
     }
 
     /// Returns a guard to the core state. A convenience around `Mutex::lock`.
