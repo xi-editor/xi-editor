@@ -90,10 +90,7 @@ impl StackMap {
 
 impl LookupResult {
     pub fn is_new(&self) -> bool {
-        match *self {
-            LookupResult::New(_) => true,
-            _ => false,
-        }
+        matches!(*self, LookupResult::New(_))
     }
 }
 
