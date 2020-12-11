@@ -447,7 +447,7 @@ impl<'a> PluginState {
             Err(e) => return Err(e),
         };
         let metadata =
-            self.get_metadata(view, syntax_set, prev_line).ok_or_else(|| Error::PeerDisconnect)?;
+            self.get_metadata(view, syntax_set, prev_line).ok_or(Error::PeerDisconnect)?;
         let line = view.get_line(prev_line)?;
 
         let comment_str = match metadata.line_comment().map(|s| s.to_owned()) {
@@ -474,8 +474,7 @@ impl<'a> PluginState {
         if line == 0 {
             return Ok(false);
         }
-        let metadata =
-            self.get_metadata(view, syntax_set, line).ok_or_else(|| Error::PeerDisconnect)?;
+        let metadata = self.get_metadata(view, syntax_set, line).ok_or(Error::PeerDisconnect)?;
         let line = view.get_line(line)?;
         Ok(metadata.decrease_indent(line))
     }

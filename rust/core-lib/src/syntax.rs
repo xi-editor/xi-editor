@@ -23,6 +23,8 @@ use crate::config::Table;
 
 /// The canonical identifier for a particular `LanguageDefinition`.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[allow(clippy::rc_buffer)] // suppress clippy;  TODO consider addressing
+                            // the warning by changing String to str
 pub struct LanguageId(Arc<String>);
 
 /// Describes a `LanguageDefinition`. Although these are provided by plugins,
