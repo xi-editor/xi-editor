@@ -615,7 +615,7 @@ impl View {
     // Encode a single line with its styles and cursors in JSON.
     // If "text" is not specified, don't add "text" to the output.
     // If "style_spans" are not specified, don't add "styles" to the output.
-    fn render_line(
+    fn encode_line(
         &self,
         client: &Client,
         styles: &StyleMap,
@@ -670,7 +670,7 @@ impl View {
             result["text"] = json!(text.slice_to_cow(start_pos..pos));
         }
         if let Some(style_spans) = style_spans {
-            result["styles"] = json!(self.render_styles(
+            result["styles"] = json!(self.encode_styles(
                 client,
                 styles,
                 start_pos,
@@ -689,7 +689,7 @@ impl View {
         result
     }
 
-    pub fn render_styles(
+    pub fn encode_styles(
         &self,
         client: &Client,
         styles: &StyleMap,
@@ -699,7 +699,7 @@ impl View {
         hls: &Vec<Vec<(usize, usize)>>,
         style_spans: &Spans<Style>,
     ) -> Vec<isize> {
-        let mut rendered_styles = Vec::new();
+        let mut encoded_styles = Vec::new();
         assert!(start <= end, "{} {}", start, end);
         let style_spans = style_spans.subseq(Interval::new(start, end));
 
@@ -709,26 +709,26 @@ impl View {
         // same span exists in both sets (as when there is an active selection)
         for (index, cur_find_hls) in hls.iter().enumerate() {
             for &(sel_start, sel_end) in cur_find_hls {
-                rendered_styles.push((sel_start as isize) - ix);
-                rendered_styles.push(sel_end as isize - sel_start as isize);
-                rendered_styles.push(index as isize + 1);
+                encoded_styles.push((sel_start as isize) - ix);
+                encoded_styles.push(sel_end as isize - sel_start as isize);
+                encoded_styles.push(index as isize + 1);
                 ix = sel_end as isize;
             }
         }
         for &(sel_start, sel_end) in sel {
-            rendered_styles.push((sel_start as isize) - ix);
-            rendered_styles.push(sel_end as isize - sel_start as isize);
-            rendered_styles.push(0);
+            encoded_styles.push((sel_start as isize) - ix);
+            encoded_styles.push(sel_end as isize - sel_start as isize);
+            encoded_styles.push(0);
             ix = sel_end as isize;
         }
         for (iv, style) in style_spans.iter() {
             let style_id = self.get_or_def_style_id(client, styles, &style);
-            rendered_styles.push((iv.start() as isize) - ix);
-            rendered_styles.push(iv.end() as isize - iv.start() as isize);
-            rendered_styles.push(style_id as isize);
+            encoded_styles.push((iv.start() as isize) - ix);
+            encoded_styles.push(iv.end() as isize - iv.start() as isize);
+            encoded_styles.push(style_id as isize);
             ix = iv.end() as isize;
         }
-        rendered_styles
+        encoded_styles
     }
 
     fn get_or_def_style_id(&self, client: &Client, style_map: &StyleMap, style: &Style) -> usize {
@@ -830,12 +830,12 @@ impl View {
                             // !CURSOR_VALID; update cursors
                             let start_line = seg.our_line_num;
 
-                            let rendered_lines = self
+                            let encoded_lines = self
                                 .lines
                                 .iter_lines(text, start_line)
                                 .take(seg.n)
                                 .map(|l| {
-                                    self.render_line(
+                                    self.encode_line(
                                         client,
                                         styles,
                                         l,
@@ -848,7 +848,7 @@ impl View {
 
                             let logical_line_opt =
                                 if logical_line == 0 { None } else { Some(logical_line + 1) };
-                            ops.push(UpdateOp::update(rendered_lines, logical_line_opt));
+                            ops.push(UpdateOp::update(encoded_lines, logical_line_opt));
                         }
                         b.add_span(seg.n, seg.our_line_num, seg.validity);
                         line_num = seg.their_line_num + seg.n;
@@ -858,12 +858,12 @@ impl View {
                             b.add_span(seg.n, 0, 0);
                         } else if seg.tactic == RenderTactic::Render {
                             let start_line = seg.our_line_num;
-                            let rendered_lines = self
+                            let encoded_lines = self
                                 .lines
                                 .iter_lines(text, start_line)
                                 .take(seg.n)
                                 .map(|l| {
-                                    self.render_line(
+                                    self.encode_line(
                                         client,
                                         styles,
                                         l,
@@ -873,8 +873,8 @@ impl View {
                                     )
                                 })
                                 .collect::<Vec<_>>();
-                            debug_assert_eq!(rendered_lines.len(), seg.n);
-                            ops.push(UpdateOp::insert(rendered_lines));
+                            debug_assert_eq!(encoded_lines.len(), seg.n);
+                            ops.push(UpdateOp::insert(encoded_lines));
                             b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                         }
                     }
