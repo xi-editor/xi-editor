@@ -79,7 +79,7 @@ will receive a `theme_changed` notification.
 ### set_language
 `set_language {"view-id":"view-id-1", "language_id":"Rust"}`
 
-Asks core to change the language of the buffer associated with the `view_id`.
+Asks core to change the language of the buffer associated with the `view_id`. You need the syntect plugin for this to work.
 If the change succeeds the client will receive a `language_changed` notification.
 
 ### modify_user_config
@@ -736,7 +736,7 @@ Updates existing scope spans starting at offset `start` until offset `len`.
 
 ### update_annotations
 
-`update_annotations {"start": 0, "len": 20, "spans": [{ "start": 0, "end": 4, "data": null }], "annotation_type": "find", "rev": 3 }`
+`update_annotations {"start": 0, "len": 20, "spans": [{ "start": 0, "end": 4, "data": null }], "annotation_type": "find", "rev":/ 3 }`
 
 Updates existing annotations and adds new annotations starting at offset `start` until offset `len`.
 
