@@ -7,6 +7,12 @@
 
 <h4 align="center">A modern editor with a backend written in Rust.</h4>
 
+***Maintenance status:*** *The xi-editor project is not currently under active
+development. Although we will happily accept bug fixes, no new features are
+currently planned. We would like to revisit writing a text editor again at
+some point in the future, but for the time being our attention is elsewhere.*
+— The Editors
+
 ***Note:*** *This repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#frontends).*
 
 The xi-editor project is an attempt to build a high quality text editor,
