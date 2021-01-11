@@ -79,7 +79,7 @@ will receive a `theme_changed` notification.
 ### set_language
 `set_language {"view-id":"view-id-1", "language_id":"Rust"}`
 
-Asks core to change the language of the buffer associated with the `view_id`.
+Asks core to change the language of the buffer associated with the `view_id`. You need the syntect plugin for this to work.
 If the change succeeds the client will receive a `language_changed` notification.
 
 ### modify_user_config
