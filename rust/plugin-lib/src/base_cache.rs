@@ -54,11 +54,7 @@ pub struct ChunkCache {
 
 impl Cache for ChunkCache {
     fn new(buf_size: usize, rev: u64, num_lines: usize) -> Self {
-        let mut new = Self::default();
-        new.buf_size = buf_size;
-        new.num_lines = num_lines;
-        new.rev = rev;
-        new
+        ChunkCache { buf_size, num_lines, rev, ..Default::default() }
     }
 
     /// Returns the line at `line_num` (zero-indexed). Returns an `Err(_)` if

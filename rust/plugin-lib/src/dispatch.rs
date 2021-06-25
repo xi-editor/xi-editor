@@ -149,7 +149,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         } else {
             xi_trace::disable_tracing();
             info!("Disabling tracing in global plugin {:?}", self.pid);
-            trace("enable tracing", &["plugin"]);
+            trace("disable tracing", &["plugin"]);
         }
     }
 

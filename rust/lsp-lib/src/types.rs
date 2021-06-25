@@ -142,9 +142,9 @@ impl From<PluginLibError> for LanguageResponseError {
     }
 }
 
-impl Into<RemoteError> for LanguageResponseError {
-    fn into(self) -> RemoteError {
-        match self {
+impl From<LanguageResponseError> for RemoteError {
+    fn from(src: LanguageResponseError) -> Self {
+        match src {
             LanguageResponseError::NullResponse => {
                 RemoteError::custom(0, "null response from server", None)
             }

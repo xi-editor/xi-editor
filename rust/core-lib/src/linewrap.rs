@@ -336,7 +336,7 @@ impl Lines {
             if self.is_converged() {
                 let inval_count = old_hard_count + inval_soft;
                 let new_count = new_hard_count + new_soft;
-                Some(InvalLines { start_line, new_count, inval_count })
+                Some(InvalLines { start_line, inval_count, new_count })
             } else {
                 None
             }

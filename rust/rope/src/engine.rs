@@ -606,7 +606,7 @@ impl Engine {
             self.tombstones = dels_from_tombstones.delete_from(&self.tombstones);
             self.deletes_from_union = self.deletes_from_union.transform_shrink(&gc_dels);
         }
-        let old_revs = std::mem::replace(&mut self.revs, Vec::new());
+        let old_revs = std::mem::take(&mut self.revs);
         for rev in old_revs.into_iter().rev() {
             match rev.edit {
                 Edit { priority, undo_group, inserts, deletes } => {

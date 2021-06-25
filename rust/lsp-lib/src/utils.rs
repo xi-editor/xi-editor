@@ -137,12 +137,10 @@ pub fn get_workspace_root_uri(
     loop {
         let parent_path = current_path.parent();
         if let Some(path) = parent_path {
-            for entry in path.read_dir()? {
-                if let Ok(entry) = entry {
-                    if entry.file_name() == identifier_os_str {
-                        return Url::from_file_path(path).map_err(|_| Error::FileUrlParseError);
-                    };
-                }
+            for entry in (path.read_dir()?).flatten() {
+                if entry.file_name() == identifier_os_str {
+                    return Url::from_file_path(path).map_err(|_| Error::FileUrlParseError);
+                };
             }
             current_path = path;
         } else {

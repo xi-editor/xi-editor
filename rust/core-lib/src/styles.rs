@@ -18,7 +18,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
-use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
 use serde_json::{self, Value};
@@ -385,9 +384,8 @@ impl ThemeStyleMap {
     pub(crate) fn sync_dir(&mut self, dir: Option<&Path>) {
         if let Some(themes_dir) = dir {
             if let Ok(paths) = ThemeSet::discover_theme_paths(themes_dir) {
-                let current_state: HashSet<PathBuf> = HashSet::from_iter(paths.into_iter());
-                let maintained_state: HashSet<PathBuf> =
-                    HashSet::from_iter(self.path_map.values().cloned());
+                let current_state: HashSet<PathBuf> = paths.into_iter().collect();
+                let maintained_state: HashSet<PathBuf> = self.path_map.values().cloned().collect();
 
                 let to_insert = current_state.difference(&maintained_state);
                 for path in to_insert {

@@ -218,9 +218,10 @@ fn is_in_asc_list<T: core::cmp::PartialOrd>(c: T, list: &[T], start: usize, end:
 }
 
 pub fn is_variation_selector(c: char) -> bool {
-    (c >= '\u{FE00}' && c <= '\u{FE0F}') || (c >= '\u{E0100}' && c <= '\u{E01EF}')
+    ('\u{FE00}'..='\u{FE0F}').contains(&c) || ('\u{E0100}'..='\u{E01EF}').contains(&c)
 }
 
+#[allow(clippy::wrong_self_convention)] // clippy wants &self for all of these
 pub trait EmojiExt {
     fn is_regional_indicator_symbol(self) -> bool;
     fn is_emoji_modifier(self) -> bool;
@@ -234,10 +235,10 @@ pub trait EmojiExt {
 
 impl EmojiExt for char {
     fn is_regional_indicator_symbol(self) -> bool {
-        self >= '\u{1F1E6}' && self <= '\u{1F1FF}'
+        ('\u{1F1E6}'..='\u{1F1FF}').contains(&self)
     }
     fn is_emoji_modifier(self) -> bool {
-        self >= '\u{1F3FB}' && self <= '\u{1F3FF}'
+        ('\u{1F3FB}'..='\u{1F3FF}').contains(&self)
     }
     fn is_emoji_combining_enclosing_keycap(self) -> bool {
         self == '\u{20E3}'
@@ -249,7 +250,7 @@ impl EmojiExt for char {
         is_in_asc_list(self, &EMOJI_MODIFIER_BASE_TABLE, 0, EMOJI_MODIFIER_BASE_TABLE.len() - 1)
     }
     fn is_tag_spec_char(self) -> bool {
-        '\u{E0020}' <= self && self <= '\u{E007E}'
+        ('\u{E0020}'..='\u{E007E}').contains(&self)
     }
     fn is_emoji_cancel_tag(self) -> bool {
         self == '\u{E007F}'
@@ -260,7 +261,7 @@ impl EmojiExt for char {
 }
 
 pub fn is_keycap_base(c: char) -> bool {
-    ('0' <= c && c <= '9') || c == '#' || c == '*'
+    ('0'..='9').contains(&c) || c == '#' || c == '*'
 }
 
 #[cfg(test)]
