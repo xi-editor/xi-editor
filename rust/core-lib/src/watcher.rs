@@ -217,7 +217,7 @@ impl FileWatcher {
     pub fn take_events(&mut self) -> VecDeque<(WatchToken, Event)> {
         let mut state = self.state.lock().unwrap();
         let WatcherState { ref mut events, .. } = *state;
-        mem::replace(events, VecDeque::new())
+        mem::take(events)
     }
 }
 

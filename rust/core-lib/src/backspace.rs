@@ -53,7 +53,7 @@ pub fn offset_for_delete_backwards(region: &SelRegion, text: &Rope, config: &Buf
                 EvenNumberedRIS,
                 InTagSequence,
                 Finished,
-            };
+            }
             let mut state = State::Start;
             let mut tmp_offset = region.end;
 

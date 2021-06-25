@@ -544,10 +544,8 @@ impl<'a> EventContext<'a> {
         if !has_newline_at_eof {
             let line_ending = &self.config.line_ending;
             rope.edit(rope_len.., line_ending);
-            rope
-        } else {
-            rope
         }
+        rope
     }
 
     /// Called after anything changes that effects word wrap, such as the size of

@@ -553,10 +553,8 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
                             if iv.is_after(beg) {
                                 return true;
                             }
-                        } else {
-                            if !iv.is_before(beg) {
-                                return true;
-                            }
+                        } else if !iv.is_before(beg) {
+                            return true;
                         }
                     } else {
                         return false;

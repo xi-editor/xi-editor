@@ -57,14 +57,14 @@ fn decode_utf8(s: &[u8]) -> Option<(char, usize)> {
     let b = s[0];
     if b < 0x80 {
         return Some((b as char, 1));
-    } else if b >= 0xc2 && b < 0xe0 && s.len() >= 2 {
+    } else if (0xc2..=0xe0).contains(&b) && s.len() >= 2 {
         let b2 = s[1];
         if (b2 as i8) > -0x40 {
             return None;
         }
         let cp = (u32::from(b) << 6) + u32::from(b2) - 0x3080;
         return from_u32(cp).map(|ch| (ch, 2));
-    } else if b >= 0xe0 && b < 0xf0 && s.len() >= 3 {
+    } else if (0xe0..=0xf0).contains(&b) && s.len() >= 3 {
         let b2 = s[1];
         let b3 = s[2];
         if (b2 as i8) > -0x40 || (b3 as i8) > -0x40 {
@@ -75,7 +75,7 @@ fn decode_utf8(s: &[u8]) -> Option<(char, usize)> {
             return None;
         } // overlong encoding
         return from_u32(cp).map(|ch| (ch, 3));
-    } else if b >= 0xf0 && b < 0xf5 && s.len() >= 4 {
+    } else if (0xf0..=0xf5).contains(&b) && s.len() >= 4 {
         let b2 = s[1];
         let b3 = s[2];
         let b4 = s[3];

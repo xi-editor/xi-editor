@@ -231,11 +231,7 @@ impl View {
     }
 
     pub(crate) fn find_in_progress(&self) -> bool {
-        match self.find_progress {
-            FindProgress::InProgress(_) => true,
-            FindProgress::Started => true,
-            _ => false,
-        }
+        matches!(self.find_progress, FindProgress::InProgress(_) | FindProgress::Started)
     }
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
@@ -852,31 +848,29 @@ impl View {
                         }
                         b.add_span(seg.n, seg.our_line_num, seg.validity);
                         line_num = seg.their_line_num + seg.n;
-                    } else {
-                        if seg.tactic == RenderTactic::Preserve {
-                            ops.push(UpdateOp::invalidate(seg.n));
-                            b.add_span(seg.n, 0, 0);
-                        } else if seg.tactic == RenderTactic::Render {
-                            let start_line = seg.our_line_num;
-                            let encoded_lines = self
-                                .lines
-                                .iter_lines(text, start_line)
-                                .take(seg.n)
-                                .map(|l| {
-                                    self.encode_line(
-                                        client,
-                                        styles,
-                                        l,
-                                        Some(text),
-                                        Some(style_spans),
-                                        text.len(),
-                                    )
-                                })
-                                .collect::<Vec<_>>();
-                            debug_assert_eq!(encoded_lines.len(), seg.n);
-                            ops.push(UpdateOp::insert(encoded_lines));
-                            b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
-                        }
+                    } else if seg.tactic == RenderTactic::Preserve {
+                        ops.push(UpdateOp::invalidate(seg.n));
+                        b.add_span(seg.n, 0, 0);
+                    } else if seg.tactic == RenderTactic::Render {
+                        let start_line = seg.our_line_num;
+                        let encoded_lines = self
+                            .lines
+                            .iter_lines(text, start_line)
+                            .take(seg.n)
+                            .map(|l| {
+                                self.encode_line(
+                                    client,
+                                    styles,
+                                    l,
+                                    Some(text),
+                                    Some(style_spans),
+                                    text.len(),
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        debug_assert_eq!(encoded_lines.len(), seg.n);
+                        ops.push(UpdateOp::insert(encoded_lines));
+                        b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                     }
                 }
             }

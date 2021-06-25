@@ -577,7 +577,7 @@ impl CoreState {
     }
 
     fn finalize_new_views(&mut self) {
-        let to_start = mem::replace(&mut self.pending_views, Vec::new());
+        let to_start = mem::take(&mut self.pending_views);
 
         to_start.iter().for_each(|(id, config)| {
             let modified = self.detect_whitespace(*id, config);
@@ -1080,11 +1080,10 @@ impl<'de> Deserialize<'de> for ViewId {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let ord = s.trim_start_matches("view-id-");
-        match usize::from_str_radix(ord, 10) {
-            Ok(id) => Ok(ViewId(id)),
-            Err(_) => Err(de::Error::invalid_value(Unexpected::Str(&s), &"view id")),
-        }
+        s.trim_start_matches("view-id-")
+            .parse::<usize>()
+            .map(ViewId)
+            .map_err(|_| de::Error::invalid_value(Unexpected::Str(&s), &"view id"))
     }
 }
 

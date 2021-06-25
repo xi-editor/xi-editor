@@ -162,6 +162,7 @@ impl Selection {
     /// case, the new region is either not added at all, because there is an ambiguous region with
     /// a lower start position, or existing regions that intersect with the new region but do
     /// not start before the new region, are deleted.
+    #[allow(clippy::suspicious_operation_groupings)]
     pub fn add_range_distinct(&mut self, region: SelRegion) -> (usize, usize) {
         let mut ix = self.search(region.min());
 
@@ -338,6 +339,7 @@ impl SelRegion {
 
     // Indicate whether this region should merge with the next.
     // Assumption: regions are sorted (self.min() <= other.min())
+    #[allow(clippy::suspicious_operation_groupings)] // clippy doesn't like comparing min() to max()
     fn should_merge(self, other: SelRegion) -> bool {
         other.min() < self.max()
             || ((self.is_caret() || other.is_caret()) && other.min() == self.max())

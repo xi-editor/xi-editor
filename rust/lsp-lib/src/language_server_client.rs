@@ -54,7 +54,7 @@ fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
 fn number_from_id(id: &Id) -> u64 {
     match *id {
         Id::Num(n) => n as u64,
-        Id::Str(ref s) => u64::from_str_radix(s, 10).expect("failed to convert string id to u64"),
+        Id::Str(ref s) => s.parse().expect("failed to convert string id to u64"),
         _ => panic!("unexpected value for id: None"),
     }
 }

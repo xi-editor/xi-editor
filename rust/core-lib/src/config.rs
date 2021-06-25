@@ -363,9 +363,8 @@ impl ConfigManager {
             .map(LanguageTag::resolve)
             .and_then(|name| self.languages.language_for_name(name))
             .map(|l| l.name.clone());
-        let mut configs = Vec::new();
+        let mut configs = vec![self.configs.get(&ConfigDomain::General)];
 
-        configs.push(self.configs.get(&ConfigDomain::General));
         if let Some(s) = lang {
             configs.push(self.configs.get(&s.into()))
         };
