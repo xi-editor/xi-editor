@@ -482,9 +482,13 @@ mod tests {
         ];
 
         assert_eq!(ne_idx_rev_fallback(one, two), Some(1));
-        if is_x86_feature_detected!("sse4.2") {
-            unsafe {
-                assert_eq!(ne_idx_rev_sse(one, two), Some(1));
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("sse4.2") {
+                unsafe {
+                    assert_eq!(ne_idx_rev_sse(one, two), Some(1));
+                }
             }
         }
     }
@@ -666,6 +670,7 @@ mod tests {
         let zer = "baaaa";
         let one = "🍄aaaa"; // F0 9F 8D 84 61 61 61 61;
         let two = "🙄aaaa"; // F0 9F 99 84 61 61 61 61;
+        #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("sse4.2") {
             unsafe {
                 assert_eq!(ne_idx_rev_sse(zer.as_bytes(), one.as_bytes()), Some(4));
@@ -677,6 +682,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn avx_mask() {
         if !is_x86_feature_detected!("avx2") {
             return;
@@ -695,6 +701,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "x86_64")]
     fn ne_avx() {
         if !is_x86_feature_detected!("avx2") {
             return;
