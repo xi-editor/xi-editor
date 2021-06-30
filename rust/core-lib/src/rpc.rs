@@ -204,6 +204,8 @@ pub enum CoreNotification {
     SaveTrace { destination: PathBuf, frontend_samples: Value },
     /// Tells `xi-core` to set the language id for the view.
     SetLanguage { view_id: ViewId, language_id: LanguageId },
+    /// Enables/disabled tailing file at file_path.
+    ToggleTail { view_id: ViewId, enabled: bool },
 }
 
 /// The requests which make up the base of the protocol.

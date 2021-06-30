@@ -235,6 +235,17 @@ impl Client {
     pub fn schedule_timer(&self, timeout: Instant, token: usize) {
         self.0.schedule_timer(timeout, token);
     }
+
+    /// Let client know tail was successfully enabled/disabled
+    pub fn toggle_tail_config_changed(&self, view_id: ViewId, is_tail_enabled: bool) {
+        self.0.send_rpc_notification(
+            "toggle_tail_config_changed",
+            &json!({
+                "view_id": view_id,
+                "is_tail_enabled": is_tail_enabled,
+            }),
+        );
+    }
 }
 
 #[derive(Debug, Serialize)]
