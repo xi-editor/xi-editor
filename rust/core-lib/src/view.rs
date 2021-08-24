@@ -537,7 +537,7 @@ impl View {
             if region.is_caret() {
                 selection.add_region(SelRegion::caret(region.max()));
             } else {
-                let mut cursor = Cursor::new(&text, region.min());
+                let mut cursor = Cursor::new(text, region.min());
 
                 while cursor.pos() < region.max() {
                     let sel_start = cursor.pos();

@@ -234,7 +234,7 @@ impl CoreState {
     fn load_file_based_config(&mut self, path: &Path) {
         let _t = trace_block("CoreState::load_config_file", &["core"]);
         if let Some(domain) = self.config_manager.domain_for_path(path) {
-            match config::try_load_from_file(&path) {
+            match config::try_load_from_file(path) {
                 Ok(table) => self.set_config(domain, table),
                 Err(e) => self.peer.alert(e.to_string()),
             }
