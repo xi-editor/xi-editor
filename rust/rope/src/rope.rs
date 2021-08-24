@@ -681,11 +681,11 @@ impl<'a> Cursor<'a, RopeInfo> {
         }
         let mut leaf_offset = pos - offset;
         let mut c = GraphemeCursor::new(pos, self.total_len(), true);
-        let mut next_boundary = c.next_boundary(&l, leaf_offset);
+        let mut next_boundary = c.next_boundary(l, leaf_offset);
         while let Err(incomp) = next_boundary {
             if let GraphemeIncomplete::PreContext(_) = incomp {
                 let (pl, poffset) = self.prev_leaf()?;
-                c.provide_context(&pl, self.pos() - poffset);
+                c.provide_context(pl, self.pos() - poffset);
             } else if incomp == GraphemeIncomplete::NextChunk {
                 self.set(pos);
                 let (nl, noffset) = self.next_leaf()?;
@@ -695,7 +695,7 @@ impl<'a> Cursor<'a, RopeInfo> {
             } else {
                 return None;
             }
-            next_boundary = c.next_boundary(&l, leaf_offset);
+            next_boundary = c.next_boundary(l, leaf_offset);
         }
         next_boundary.unwrap_or(None)
     }
@@ -709,11 +709,11 @@ impl<'a> Cursor<'a, RopeInfo> {
         }
         let mut leaf_offset = pos - offset;
         let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
-        let mut prev_boundary = c.prev_boundary(&l, leaf_offset);
+        let mut prev_boundary = c.prev_boundary(l, leaf_offset);
         while let Err(incomp) = prev_boundary {
             if let GraphemeIncomplete::PreContext(_) = incomp {
                 let (pl, poffset) = self.prev_leaf()?;
-                c.provide_context(&pl, self.pos() - poffset);
+                c.provide_context(pl, self.pos() - poffset);
             } else if incomp == GraphemeIncomplete::PrevChunk {
                 self.set(pos);
                 let (pl, poffset) = self.prev_leaf()?;
@@ -723,7 +723,7 @@ impl<'a> Cursor<'a, RopeInfo> {
             } else {
                 return None;
             }
-            prev_boundary = c.prev_boundary(&l, leaf_offset);
+            prev_boundary = c.prev_boundary(l, leaf_offset);
         }
         prev_boundary.unwrap_or(None)
     }

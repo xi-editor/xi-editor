@@ -446,7 +446,7 @@ impl CoreState {
         //Set only if requested theme is different from the
         //current one.
         if theme_name != self.style_map.borrow().get_theme_name() {
-            if let Err(e) = self.style_map.borrow_mut().set_theme(&theme_name) {
+            if let Err(e) = self.style_map.borrow_mut().set_theme(theme_name) {
                 error!("error setting theme: {:?}, {:?}", theme_name, e);
                 return;
             }
@@ -583,7 +583,7 @@ impl CoreState {
             let modified = self.detect_whitespace(*id, config);
             let config = modified.as_ref().unwrap_or(config);
             let mut edit_ctx = self.make_context(*id).unwrap();
-            edit_ctx.finish_init(&config);
+            edit_ctx.finish_init(config);
         });
     }
 
@@ -1019,7 +1019,7 @@ where
     type Item = EventContext<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let &mut Iter { ref mut views, ref mut seen, ref inner } = self;
+        let &mut Iter { ref mut views, ref mut seen, inner } = self;
         loop {
             let next_view = match views.next() {
                 None => return None,

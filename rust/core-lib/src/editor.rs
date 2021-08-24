@@ -370,7 +370,7 @@ impl Editor {
 
     pub(crate) fn do_cut(&mut self, view: &mut View) -> Value {
         let result = self.do_copy(view);
-        let delta = edit_ops::delete_sel_regions(&self.text, &view.sel_regions());
+        let delta = edit_ops::delete_sel_regions(&self.text, view.sel_regions());
         if !delta.is_identity() {
             self.this_edit_type = EditType::Delete;
             self.add_delta(delta);

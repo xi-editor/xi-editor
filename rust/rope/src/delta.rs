@@ -643,7 +643,7 @@ impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
-        while let Some(elem) = self.els_iter.next() {
+        for elem in &mut self.els_iter {
             match *elem {
                 DeltaElement::Copy(b, e) => {
                     self.pos += e - b;
@@ -673,7 +673,7 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
-        while let Some(elem) = self.els_iter.next() {
+        for elem in &mut self.els_iter {
             match *elem {
                 DeltaElement::Copy(b, e) => {
                     if b > self.last_end {

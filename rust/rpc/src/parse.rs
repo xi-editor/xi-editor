@@ -78,7 +78,7 @@ impl MessageReader {
     #[doc(hidden)]
     pub fn parse(&self, s: &str) -> Result<RpcObject, ReadError> {
         let _trace = xi_trace::trace_block("parse", &["rpc"]);
-        let val = serde_json::from_str::<Value>(&s)?;
+        let val = serde_json::from_str::<Value>(s)?;
         if !val.is_object() {
             Err(ReadError::NotObject)
         } else {

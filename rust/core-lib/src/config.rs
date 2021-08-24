@@ -732,7 +732,7 @@ pub(crate) fn try_load_from_file(path: &Path) -> Result<Table, ConfigError> {
 }
 
 pub(crate) fn table_from_toml_str(s: &str) -> Result<Table, toml::de::Error> {
-    let table = toml::from_str(&s)?;
+    let table = toml::from_str(s)?;
     let table = from_toml_value(table).as_object().unwrap().to_owned();
     Ok(table)
 }

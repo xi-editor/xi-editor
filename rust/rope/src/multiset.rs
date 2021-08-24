@@ -378,7 +378,7 @@ impl<'a> Iterator for RangeIter<'a> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<(usize, usize)> {
-        while let Some(seg) = self.seg_iter.next() {
+        for seg in &mut self.seg_iter {
             self.consumed += seg.len;
             if self.matcher.matches(seg) {
                 return Some((self.consumed - seg.len, self.consumed));

@@ -211,9 +211,9 @@ fn is_in_asc_list<T: core::cmp::PartialOrd>(c: T, list: &[T], start: usize, end:
     let mid = (start + end) / 2;
 
     if c >= list[mid] {
-        is_in_asc_list(c, &list, mid, end)
+        is_in_asc_list(c, list, mid, end)
     } else {
-        is_in_asc_list(c, &list, start, mid)
+        is_in_asc_list(c, list, start, mid)
     }
 }
 

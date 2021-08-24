@@ -225,12 +225,7 @@ impl Engine {
     }
 
     fn find_rev(&self, rev_id: RevId) -> Option<usize> {
-        self.revs
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|&(_, ref rev)| rev.rev_id == rev_id)
-            .map(|(i, _)| i)
+        self.revs.iter().enumerate().rev().find(|&(_, rev)| rev.rev_id == rev_id).map(|(i, _)| i)
     }
 
     fn find_rev_token(&self, rev_token: RevToken) -> Option<usize> {
@@ -238,7 +233,7 @@ impl Engine {
             .iter()
             .enumerate()
             .rev()
-            .find(|&(_, ref rev)| rev.rev_id.token() == rev_token)
+            .find(|&(_, rev)| rev.rev_id.token() == rev_token)
             .map(|(i, _)| i)
     }
 
@@ -498,7 +493,7 @@ impl Engine {
     // recompute the prefix up to where the history diverges, but it's not clear that's
     // even worth the code complexity.
     fn compute_undo(&self, groups: &BTreeSet<usize>) -> (Revision, Subset) {
-        let toggled_groups = self.undone_groups.symmetric_difference(&groups).cloned().collect();
+        let toggled_groups = self.undone_groups.symmetric_difference(groups).cloned().collect();
         let first_candidate = self.find_first_undo_candidate_index(&toggled_groups);
         // the `false` below: don't invert undos since our first_candidate is based on the current undo set, not past
         let mut deletes_from_union =

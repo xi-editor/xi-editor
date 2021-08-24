@@ -107,8 +107,8 @@ pub unsafe fn ne_idx_avx(one: &[u8], two: &[u8]) -> Option<usize> {
     while idx < min_len {
         let stride_len = AVX_STRIDE.min(min_len - idx);
         let mask = avx_compare_mask(
-            &one.get_unchecked(idx..idx + stride_len),
-            &two.get_unchecked(idx..idx + stride_len),
+            one.get_unchecked(idx..idx + stride_len),
+            two.get_unchecked(idx..idx + stride_len),
         );
         // at the end of the slice the mask might include garbage bytes, so
         // we ignore matches that are OOB
@@ -129,8 +129,8 @@ pub unsafe fn ne_idx_sse(one: &[u8], two: &[u8]) -> Option<usize> {
     while idx < min_len {
         let stride_len = SSE_STRIDE.min(min_len - idx);
         let mask = sse_compare_mask(
-            &one.get_unchecked(idx..idx + stride_len),
-            &two.get_unchecked(idx..idx + stride_len),
+            one.get_unchecked(idx..idx + stride_len),
+            two.get_unchecked(idx..idx + stride_len),
         );
         if mask != 0 && idx + (mask.trailing_zeros() as usize) < min_len {
             return Some(idx + mask.trailing_zeros() as usize);

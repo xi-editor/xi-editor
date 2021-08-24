@@ -237,14 +237,14 @@ pub fn region_movement(
         Movement::DownExactPosition => vertical_motion_exact_pos(r, lo, text, false, modify),
         Movement::StartOfParagraph => {
             // Note: TextEdit would start at modify ? r.end : r.min()
-            let mut cursor = Cursor::new(&text, r.end);
+            let mut cursor = Cursor::new(text, r.end);
             let offset = cursor.prev::<LinesMetric>().unwrap_or(0);
             (offset, None)
         }
         Movement::EndOfParagraph => {
             // Note: TextEdit would start at modify ? r.end : r.max()
             let mut offset = r.end;
-            let mut cursor = Cursor::new(&text, offset);
+            let mut cursor = Cursor::new(text, offset);
             if let Some(next_para_offset) = cursor.next::<LinesMetric>() {
                 if cursor.is_boundary::<LinesMetric>() {
                     if let Some(eol) = text.prev_grapheme_offset(next_para_offset) {
@@ -262,7 +262,7 @@ pub fn region_movement(
         Movement::EndOfParagraphKill => {
             // Note: TextEdit would start at modify ? r.end : r.max()
             let mut offset = r.end;
-            let mut cursor = Cursor::new(&text, offset);
+            let mut cursor = Cursor::new(text, offset);
             if let Some(next_para_offset) = cursor.next::<LinesMetric>() {
                 offset = next_para_offset;
                 if cursor.is_boundary::<LinesMetric>() {

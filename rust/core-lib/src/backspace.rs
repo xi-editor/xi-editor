@@ -26,7 +26,7 @@ pub fn offset_for_delete_backwards(region: &SelRegion, text: &Rope, config: &Buf
         region.min()
     } else {
         // backspace deletes max(1, tab_size) contiguous spaces
-        let (_, c) = LogicalLines.offset_to_line_col(&text, region.start);
+        let (_, c) = LogicalLines.offset_to_line_col(text, region.start);
 
         let tab_off = c % config.tab_size;
         let tab_size = config.tab_size;
@@ -61,7 +61,7 @@ pub fn offset_for_delete_backwards(region: &SelRegion, text: &Rope, config: &Buf
             let mut last_seen_vs_code_point_count = 0;
 
             while state != State::Finished && tmp_offset > 0 {
-                let mut cursor = Cursor::new(&text, tmp_offset);
+                let mut cursor = Cursor::new(text, tmp_offset);
                 let code_point = cursor.prev_codepoint().unwrap_or('0');
 
                 tmp_offset = text.prev_codepoint_offset(tmp_offset).unwrap_or(0);

@@ -77,7 +77,7 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
-        let line_hashes = make_line_hashes(&base, MIN_SIZE);
+        let line_hashes = make_line_hashes(base, MIN_SIZE);
 
         let line_count = target.measure::<LinesMetric>() + 1;
         let mut matches = Vec::with_capacity(line_count);

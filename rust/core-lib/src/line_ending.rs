@@ -37,7 +37,7 @@ impl LineEnding {
         let mut lf = false;
 
         for chunk in rope.iter_chunks(..) {
-            match LineEnding::parse_chunk(&chunk) {
+            match LineEnding::parse_chunk(chunk) {
                 Ok(Some(LineEnding::CrLf)) => crlf = true,
                 Ok(Some(LineEnding::Lf)) => lf = true,
                 Ok(None) => (),

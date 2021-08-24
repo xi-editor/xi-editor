@@ -106,7 +106,7 @@ pub fn find_progress(
             lines,
             pat,
             |_| Some(0),
-            |cursor, lines, pat| compare_cursor_regex(cursor, lines, pat, &r),
+            |cursor, lines, pat| compare_cursor_regex(cursor, lines, pat, r),
             num_steps,
         ),
         None => {

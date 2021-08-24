@@ -90,7 +90,7 @@ impl<'a> EventContext<'a> {
         let mut editor = self.editor.borrow_mut();
         let mut view = self.view.borrow_mut();
         let mut kill_ring = self.kill_ring.borrow_mut();
-        f(&mut editor, &mut view, &mut kill_ring, &self.config)
+        f(&mut editor, &mut view, &mut kill_ring, self.config)
     }
 
     /// Executes a closure with a mutable reference to the view and a reference
@@ -457,8 +457,8 @@ impl<'a> EventContext<'a> {
             self.update_wrap_settings(true);
         }
 
-        self.client.config_changed(self.view_id, &changes);
-        self.plugins.iter().for_each(|plug| plug.config_changed(self.view_id, &changes));
+        self.client.config_changed(self.view_id, changes);
+        self.plugins.iter().for_each(|plug| plug.config_changed(self.view_id, changes));
         self.render()
     }
 
