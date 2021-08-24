@@ -91,7 +91,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
     fn do_config_changed(&mut self, view_id: ViewId, changes: &ConfigTable) {
         let v = bail!(self.views.get_mut(&view_id), "config_changed", self.pid, view_id);
-        self.plugin.config_changed(v, &changes);
+        self.plugin.config_changed(v, changes);
         for (key, value) in changes.iter() {
             v.config_table.insert(key.to_owned(), value.to_owned());
         }
