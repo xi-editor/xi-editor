@@ -174,7 +174,6 @@ impl From<Value> for RpcObject {
 mod tests {
 
     use super::*;
-    
 
     #[derive(Serialize, Deserialize, Debug, PartialEq)]
     #[serde(rename_all = "snake_case")]

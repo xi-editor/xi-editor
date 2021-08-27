@@ -980,10 +980,7 @@ mod tests {
         let s1 = "\u{1f1fa}\u{1f1f8}".repeat(100);
         let a = Rope::concat(
             Rope::from(s1.clone()),
-            Rope::concat(
-                Rope::from(s1.clone() + "\u{1f1fa}"),
-                Rope::from(s1.clone()),
-            ),
+            Rope::concat(Rope::from(s1.clone() + "\u{1f1fa}"), Rope::from(s1.clone())),
         );
         for i in 1..(s1.len() * 3) {
             assert_eq!(Some((i - 1) / 8 * 8), a.prev_grapheme_offset(i));

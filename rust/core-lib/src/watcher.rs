@@ -381,8 +381,7 @@ mod tests {
 
     impl TestHelpers for tempdir::TempDir {
         fn mkpath(&self, p: &str) -> PathBuf {
-            let mut path =
-                self.path().canonicalize().expect("failed to canonalize path");
+            let mut path = self.path().canonicalize().expect("failed to canonalize path");
             for part in p.split('/').collect::<Vec<_>>() {
                 if part != "." {
                     path.push(part);

@@ -903,8 +903,7 @@ mod tests {
     #[test]
     fn bsearch_equivalence() {
         let text: Rope =
-            "this is a line with some text in it, which is not unusual\n".repeat(1000)
-                .into();
+            "this is a line with some text in it, which is not unusual\n".repeat(1000).into();
         let lines = make_lines(&text, 30.);
 
         let mut linear = MergedBreaks::new(&text, &lines.breaks);
