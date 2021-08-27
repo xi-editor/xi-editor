@@ -773,7 +773,7 @@ mod tests {
             text
         }
 
-        fn make_context<'a>(&'a self) -> EventContext<'a> {
+        fn make_context(&self) -> EventContext<'_> {
             let view_id = ViewId(1);
             let buffer_id = self.view.borrow().get_buffer_id();
             let config = self.config_manager.get_buffer_config(buffer_id);

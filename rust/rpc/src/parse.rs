@@ -174,7 +174,7 @@ impl From<Value> for RpcObject {
 mod tests {
 
     use super::*;
-    use serde_json;
+    
 
     #[derive(Serialize, Deserialize, Debug, PartialEq)]
     #[serde(rename_all = "snake_case")]
@@ -207,10 +207,7 @@ mod tests {
         let json = r#"{"id":0,"method":"new_truth","params":{}}"#;
         let p: RpcObject = serde_json::from_str::<Value>(json).unwrap().into();
         let req = p.into_rpc::<TestN, TestR>().unwrap();
-        let is_ok = match req {
-            Call::InvalidRequest(0, _) => true,
-            _ => false,
-        };
+        let is_ok = matches!(req, Call::InvalidRequest(0, _));
         if !is_ok {
             panic!("{:?}", req);
         }
@@ -222,10 +219,7 @@ mod tests {
         let json = r#"{"id":0,"method":"close_view","params":{"view_id": "view-id-1"}}"#;
         let p: RpcObject = serde_json::from_str::<Value>(json).unwrap().into();
         let req = p.into_rpc::<TestN, TestR>().unwrap();
-        let is_ok = match req {
-            Call::InvalidRequest(0, _) => true,
-            _ => false,
-        };
+        let is_ok = matches!(req, Call::InvalidRequest(0, _));
         if !is_ok {
             panic!("{:?}", req);
         }

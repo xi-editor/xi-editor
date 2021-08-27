@@ -512,7 +512,7 @@ mod tests {
     use crate::multiset::*;
     use crate::test_helpers::find_deletions;
 
-    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const TEST_STR: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     #[test]
     fn test_apply() {

@@ -981,7 +981,7 @@ mod tests {
         let a = Rope::concat(
             Rope::from(s1.clone()),
             Rope::concat(
-                Rope::from(String::from(s1.clone()) + "\u{1f1fa}"),
+                Rope::from(s1.clone() + "\u{1f1fa}"),
                 Rope::from(s1.clone()),
             ),
         );
@@ -1027,6 +1027,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::eq_op)]
     fn eq_small() {
         let a = Rope::from("a");
         let a2 = Rope::from("a");
@@ -1057,8 +1058,8 @@ mod tests {
         let a_rope = Rope::from(&a);
         let b_rope = Rope::from(&b);
         assert!(r != a_rope);
-        assert!(r.clone().slice(..a.len()) == a_rope);
-        assert!(r.clone().slice(a.len()..) == b_rope);
+        assert!(r.slice(..a.len()) == a_rope);
+        assert!(r.slice(a.len()..) == b_rope);
         assert!(r == a_rope.clone() + b_rope.clone());
         assert!(r != b_rope + a_rope);
     }

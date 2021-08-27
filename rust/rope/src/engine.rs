@@ -967,7 +967,7 @@ mod tests {
     use std::collections::BTreeSet;
     use crate::test_helpers::{parse_subset_list, parse_subset, parse_delta, debug_subsets};
 
-    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const TEST_STR: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     fn build_delta_1() -> Delta<RopeInfo> {
         let mut d_builder = Builder::new(TEST_STR.len());
@@ -1006,7 +1006,7 @@ mod tests {
         };
         engine.edit_rev(0, 1, first_rev, delta.clone());
         assert_eq!(TEST_STR, String::from(engine.get_head()));
-        engine.edit_rev(0, 1, first_rev, delta.clone());
+        engine.edit_rev(0, 1, first_rev, delta);
         assert_eq!(TEST_STR, String::from(engine.get_head()));
     }
 
@@ -1131,7 +1131,7 @@ mod tests {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new(0,0), Rope::from("a"), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
-        engine.edit_rev(1, 1, first_rev, d1.clone());
+        engine.edit_rev(1, 1, first_rev, d1);
         let new_head = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
         let d2 = Delta::simple_edit(Interval::new(0,0), Rope::from("a"), TEST_STR.len()+1);
@@ -1149,7 +1149,7 @@ mod tests {
         let d1 = Delta::simple_edit(Interval::new(0,10), Rope::from(""), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
-        engine.edit_rev(1, 2, first_rev, d1.clone());
+        engine.edit_rev(1, 2, first_rev, d1);
         engine.undo([1].iter().cloned().collect());
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
         engine.undo([1,2].iter().cloned().collect());
@@ -1240,7 +1240,7 @@ mod tests {
         let d1 = Delta::simple_edit(Interval::new(0,10), Rope::from(""), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
-        engine.edit_rev(1, 2, first_rev, d1.clone());
+        engine.edit_rev(1, 2, first_rev, d1);
         let gc : BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         // shouldn't do anything since it was double-deleted and one was GC'd
@@ -1255,7 +1255,7 @@ mod tests {
         let initial_rev = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
         engine.edit_rev(1, 1, initial_rev, d1.clone());
-        engine.edit_rev(1, 2, initial_rev, d1.clone());
+        engine.edit_rev(1, 2, initial_rev, d1);
         let gc : BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         // only one of the deletes was gc'd, the other should still be in effect
@@ -1272,7 +1272,7 @@ mod tests {
         let initial_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, initial_rev, d1.clone());
         engine.undo([1,2].iter().cloned().collect());
-        engine.edit_rev(1, 2, initial_rev, d1.clone());
+        engine.edit_rev(1, 2, initial_rev, d1);
         let gc : BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         assert_eq!(TEST_STR, String::from(engine.get_head()));

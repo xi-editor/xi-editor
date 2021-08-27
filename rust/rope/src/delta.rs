@@ -706,7 +706,7 @@ mod tests {
     use crate::rope::{Rope, RopeInfo};
     use crate::test_helpers::find_deletions;
 
-    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const TEST_STR: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     #[test]
     fn simple() {
@@ -889,7 +889,7 @@ mod serde_tests {
     use crate::{Delta, Interval};
     use serde_json;
 
-    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const TEST_STR: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     #[test]
     fn delta_serde() {

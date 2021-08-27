@@ -19,7 +19,7 @@ use std::io::Read;
 
 use xi_unicode::LineBreakIterator;
 
-const TEST_FILE: &'static str = "tests/LineBreakTest.txt";
+const TEST_FILE: &str = "tests/LineBreakTest.txt";
 
 #[test]
 fn line_break_test() {

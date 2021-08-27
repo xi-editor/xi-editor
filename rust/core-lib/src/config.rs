@@ -785,7 +785,7 @@ mod tests {
 
         let mut manager = ConfigManager::new(None, None);
         manager.set_languages(Languages::new(&[lang_def]));
-        manager.set_user_config(rust_id.clone().into(), rust_config).unwrap();
+        manager.set_user_config(rust_id.into(), rust_config).unwrap();
         manager.set_user_config(ConfigDomain::General, user_config).unwrap();
 
         let changes = json!({"tab_size": 67}).as_object().unwrap().to_owned();
@@ -867,7 +867,7 @@ translate_tabs_to_spaces = true
         let lang_overrides = json!({"font_size": 420, "font_face": "cool"});
         let lang_def = rust_lang_def(lang_defaults.as_object().map(Table::clone));
         let lang_id: LanguageId = "Rust".into();
-        let domain: ConfigDomain = lang_id.clone().into();
+        let domain: ConfigDomain = lang_id.into();
 
         manager.set_languages(Languages::new(&[lang_def.clone()]));
         assert_eq!(manager.languages.iter().count(), 1);
@@ -896,7 +896,7 @@ translate_tabs_to_spaces = true
         assert_eq!(config.items.font_size, 14.);
 
         // user config trumps defaults when language exists
-        manager.set_languages(Languages::new(&[lang_def.clone()]));
+        manager.set_languages(Languages::new(&[lang_def]));
         let config = manager.get_buffer_config(buf_id).to_owned();
         assert_eq!(config.items.font_size, 420.);
 
@@ -904,7 +904,7 @@ translate_tabs_to_spaces = true
 
         // null key should void user setting, leave language default
         let table = manager.table_for_update(domain.clone(), changes);
-        manager.set_user_config(domain.clone(), table).unwrap();
+        manager.set_user_config(domain, table).unwrap();
         let config = manager.get_buffer_config(buf_id).to_owned();
         assert_eq!(config.items.font_size, 69.);
 

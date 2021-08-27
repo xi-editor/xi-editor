@@ -382,7 +382,7 @@ mod tests {
     impl TestHelpers for tempdir::TempDir {
         fn mkpath(&self, p: &str) -> PathBuf {
             let mut path =
-                self.path().canonicalize().expect("failed to canonalize path").to_owned();
+                self.path().canonicalize().expect("failed to canonalize path");
             for part in p.split('/').collect::<Vec<_>>() {
                 if part != "." {
                     path.push(part);
@@ -422,7 +422,7 @@ mod tests {
             let mut file =
                 fs::OpenOptions::new().write(true).open(path).expect("failed to open file");
 
-            file.write(b"some data").expect("failed to write to file");
+            file.write_all(b"some data").expect("failed to write to file");
             file.sync_all().expect("failed to sync file");
         }
 

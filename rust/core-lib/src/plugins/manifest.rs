@@ -248,7 +248,7 @@ mod tests {
         }
         "#;
 
-        let plugin_desc: PluginDescription = serde_json::from_str(&json).unwrap();
+        let plugin_desc: PluginDescription = serde_json::from_str(json).unwrap();
         if cfg!(windows) {
             assert!(plugin_desc.exec_path.ends_with("binary.exe"));
         } else {
@@ -293,7 +293,7 @@ mod tests {
     }
         "#;
 
-        let command: Command = serde_json::from_str(&json).unwrap();
+        let command: Command = serde_json::from_str(json).unwrap();
         assert_eq!(command.title, "Test Command");
         assert_eq!(command.args[0].arg_type, ArgumentType::Bool);
         assert_eq!(command.rpc_cmd.params_ref()["non_arg"], "plugin supplied value");
