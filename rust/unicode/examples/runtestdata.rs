@@ -31,7 +31,7 @@ fn quote_str(s: &str) -> String {
         if c == '"' || c == '\\' {
             result.push('\\');
         }
-        if ' ' <= c && c <= '~' {
+        if (' '..='~').contains(&c) {
             result.push(c);
         } else {
             result.push_str(&format!("\\u{{{:04x}}}", c as u32));
@@ -97,10 +97,8 @@ fn run_test(filename: &str, lb: bool) -> std::io::Result<()> {
             if check_lb(&s) {
                 pass += 1;
             }
-        } else {
-            if check_breaks(&s, &breaks) {
-                pass += 1;
-            }
+        } else if check_breaks(&s, &breaks) {
+            pass += 1;
         }
     }
     println!("{}/{} pass", pass, total);

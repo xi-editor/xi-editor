@@ -100,7 +100,7 @@ impl AsRef<str> for LanguageId {
 // let's us use &str to query a HashMap with `LanguageId` keys
 impl Borrow<str> for LanguageId {
     fn borrow(&self) -> &str {
-        &self.0.as_ref()
+        self.0.as_ref()
     }
 }
 

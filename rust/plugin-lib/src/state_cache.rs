@@ -88,7 +88,7 @@ impl<S: Clone + Default> Cache for StateCache<S> {
     fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize, num_lines: usize, rev: u64) {
         let _t = trace_block("StateCache::update", &["plugin"]);
 
-        if let Some(ref delta) = delta {
+        if let Some(delta) = delta {
             self.update_line_cache(delta);
         } else {
             // if there's no delta (very large edit) we blow away everything
@@ -312,7 +312,7 @@ impl<S: Clone + Default> StateCache<S> {
             } else if need_push {
                 new_frontier.push(line_num);
                 need_push = false;
-                if let Some(ref entry) = self.state_cache.get(cache_idx) {
+                if let Some(entry) = self.state_cache.get(cache_idx) {
                     if *old_ln >= entry.line_num {
                         new_frontier.push(old_ln.wrapping_add(nl_count_delta as usize));
                     }

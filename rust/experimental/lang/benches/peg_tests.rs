@@ -40,7 +40,7 @@ extern crate nom;
 #[cfg(feature = "combine")]
 extern crate combine;
 
-const TEST_STR: &'static str = "1.2345e56";
+const TEST_STR: &str = "1.2345e56";
 
 #[cfg(all(test, feature = "pom"))]
 mod pom_benches {
@@ -144,7 +144,7 @@ mod combine_benches {
 use xi_lang::peg::{Alt, OneByte, OneOrMore, Optional, Peg};
 
 fn is_digit(c: u8) -> bool {
-    c >= b'0' && c <= b'9'
+    (b'0'..=b'9').contains(&c)
 }
 
 fn my_number(s: &[u8]) -> Option<usize> {
@@ -158,7 +158,7 @@ fn my_number(s: &[u8]) -> Option<usize> {
 }
 
 fn main() {
-    if let Some(s) = env::args().skip(1).next() {
+    if let Some(s) = env::args().nth(1) {
         println!("my: {:?}", my_number(s.as_bytes()));
         /*
         let mut buf = DataInput::new(s.as_bytes());

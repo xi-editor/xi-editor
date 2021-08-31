@@ -21,7 +21,7 @@ use xi_rope::rope::{LinesMetric, Rope};
 use xi_rope::tree::*;
 
 fn run_down_rope(text: &Rope) {
-    let mut cursor = Cursor::new(&text, 0);
+    let mut cursor = Cursor::new(text, 0);
 
     while cursor.pos() < text.len() - 2 {
         cursor.next::<LinesMetric>();

@@ -197,9 +197,9 @@ fn generate_logfile_config(flags: &HashMap<String, Option<String>>) -> LogfileCo
     // If the key is set, get the Option within
     let log_dir_env_flag = EnvFlagConfig { env_name: "XI_LOG_DIR", flag_name: "log-dir" };
     let log_file_env_flag = EnvFlagConfig { env_name: "XI_LOG_FILE", flag_name: "log-file" };
-    let log_dir_flag_option = extract_env_or_flag(&flags, &log_dir_env_flag).map(PathBuf::from);
+    let log_dir_flag_option = extract_env_or_flag(flags, &log_dir_env_flag).map(PathBuf::from);
 
-    let log_file_flag_option = extract_env_or_flag(&flags, &log_file_env_flag).map(PathBuf::from);
+    let log_file_flag_option = extract_env_or_flag(flags, &log_file_env_flag).map(PathBuf::from);
 
     LogfileConfig { directory: log_dir_flag_option, file: log_file_flag_option }
 }

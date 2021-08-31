@@ -207,7 +207,7 @@ impl ScopeLayer {
         for stack in scopes {
             let scopes = stack
                 .iter()
-                .map(|s| Scope::new(&s))
+                .map(|s| Scope::new(s))
                 .filter(|result| match *result {
                     Err(ref err) => {
                         warn!("failed to resolve scope {}\nErr: {:?}", &stack.join(" "), err);

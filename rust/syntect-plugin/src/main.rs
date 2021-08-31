@@ -129,7 +129,7 @@ impl<'a> PluginState {
     ) -> LineState {
         let (mut parse_state, mut scope_state) =
             state.or_else(|| self.initial_state.clone()).unwrap();
-        let ops = parse_state.parse_line(&line, syntax_set);
+        let ops = parse_state.parse_line(line, syntax_set);
 
         let mut prev_cursor = 0;
         let repo = SCOPE_REPO.lock().unwrap();
@@ -260,7 +260,7 @@ impl<'a> PluginState {
         line: usize,
     ) -> Option<ScopedMetadata<'a>> {
         let text = view.get_line(line).unwrap_or("");
-        let scope = self.compute_syntax(&text, None, syntax_set, false).map(|(_, scope)| scope)?;
+        let scope = self.compute_syntax(text, None, syntax_set, false).map(|(_, scope)| scope)?;
         Some(syntax_set.metadata().metadata_for_scope(scope.as_slice()))
     }
 

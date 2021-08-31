@@ -154,16 +154,15 @@ fn test_invalidate() {
                             || op["op"].as_str().unwrap() == "skip")
                         .next()
                         .is_none(),
-                    "bad update: ".to_string()
-                        + &ops
-                            .iter()
-                            .map(|op| format!(
-                                "{} {}",
-                                op["op"].as_str().unwrap(),
-                                op["n"].as_u64().unwrap()
-                            ))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                    "bad update: {}",
+                    &ops.iter()
+                        .map(|op| format!(
+                            "{} {}",
+                            op["op"].as_str().unwrap(),
+                            op["n"].as_u64().unwrap()
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 );
             }
         }

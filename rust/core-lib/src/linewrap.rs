@@ -777,7 +777,6 @@ fn merged_line_of_offset(text: &Rope, soft: &Breaks, offset: usize) -> usize {
 mod tests {
     use super::*;
     use std::borrow::Cow;
-    use std::iter;
     use xi_rpc::test_utils::DummyPeer;
 
     fn make_lines(text: &Rope, width: f64) -> Lines {
@@ -794,7 +793,7 @@ mod tests {
         result
     }
 
-    fn debug_breaks<'a>(text: &'a Rope, width: f64) -> Vec<Cow<'a, str>> {
+    fn debug_breaks(text: &Rope, width: f64) -> Vec<Cow<'_, str>> {
         let lines = make_lines(text, width);
         render_breaks(text, &lines)
     }
@@ -904,10 +903,7 @@ mod tests {
     #[test]
     fn bsearch_equivalence() {
         let text: Rope =
-            iter::repeat("this is a line with some text in it, which is not unusual\n")
-                .take(1000)
-                .collect::<String>()
-                .into();
+            "this is a line with some text in it, which is not unusual\n".repeat(1000).into();
         let lines = make_lines(&text, 30.);
 
         let mut linear = MergedBreaks::new(&text, &lines.breaks);

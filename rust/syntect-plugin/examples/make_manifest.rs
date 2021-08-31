@@ -83,7 +83,7 @@ fn main() -> Result<(), io::Error> {
     f.write_all(toml_str.as_ref())
 }
 
-fn lang_from_syn<'a>(src: &'a SyntaxReference) -> LanguageDefinition {
+fn lang_from_syn(src: &SyntaxReference) -> LanguageDefinition {
     let mut extensions = src.file_extensions.clone();
 
     // add support for .xiconfig

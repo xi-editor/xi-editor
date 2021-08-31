@@ -1162,13 +1162,11 @@ mod test {
             if pos < s.len() {
                 assert!(it.is_some(), "must be Some(_)");
                 assert!(s.as_bytes()[pos - 1] == b'\n', "not a linebreak");
+            } else if s.as_bytes()[s.len() - 1] == b'\n' {
+                assert!(it.is_some(), "must be Some(_)");
             } else {
-                if s.as_bytes()[s.len() - 1] == b'\n' {
-                    assert!(it.is_some(), "must be Some(_)");
-                } else {
-                    assert!(it.is_none());
-                    assert!(c.get_leaf().is_none());
-                }
+                assert!(it.is_none());
+                assert!(c.get_leaf().is_none());
             }
         }
     }
@@ -1251,7 +1249,7 @@ mod test {
         let mut cursor = Cursor::new(&rope, rope.len());
 
         for i in (1..1001).rev() {
-            expected_pos = expected_pos - i;
+            expected_pos -= i;
             assert_eq!(expected_pos, cursor.prev::<LinesMetric>().unwrap());
         }
 
@@ -1278,7 +1276,7 @@ mod test {
     #[test]
     fn balance_invariant() {
         let mut tb = TreeBuilder::<RopeInfo>::new();
-        let leaves: Vec<String> = (0..1000).map(|i| i.to_string().into()).collect();
+        let leaves: Vec<String> = (0..1000).map(|i| i.to_string()).collect();
         tb.push_leaves(leaves);
         let tree = tb.build();
         println!("height {}", tree.height());

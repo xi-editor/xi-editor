@@ -174,7 +174,7 @@ impl Find {
                 self.update_find(text, start, text.len(), false);
             } else {
                 // ... the end of the line including line break
-                let mut cursor = Cursor::new(&text, iv.end() + new_len);
+                let mut cursor = Cursor::new(text, iv.end() + new_len);
 
                 let end_of_line = match cursor.next::<LinesMetric>() {
                     Some(end) => end,
@@ -263,7 +263,7 @@ impl Find {
         let expanded_end = min(end + slop, text.len());
         let from = text.at_or_prev_codepoint_boundary(expanded_start).unwrap_or(0);
         let to = text.at_or_next_codepoint_boundary(expanded_end).unwrap_or(text.len());
-        let mut to_cursor = Cursor::new(&text, to);
+        let mut to_cursor = Cursor::new(text, to);
         let _ = to_cursor.next_leaf();
 
         let sub_text = text.subseq(Interval::new(0, to_cursor.pos()));
@@ -275,7 +275,7 @@ impl Find {
             &mut find_cursor,
             &mut raw_lines,
             self.case_matching,
-            &search_string,
+            search_string,
             self.regex.as_ref(),
         ) {
             let end = find_cursor.pos();

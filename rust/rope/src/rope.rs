@@ -681,11 +681,11 @@ impl<'a> Cursor<'a, RopeInfo> {
         }
         let mut leaf_offset = pos - offset;
         let mut c = GraphemeCursor::new(pos, self.total_len(), true);
-        let mut next_boundary = c.next_boundary(&l, leaf_offset);
+        let mut next_boundary = c.next_boundary(l, leaf_offset);
         while let Err(incomp) = next_boundary {
             if let GraphemeIncomplete::PreContext(_) = incomp {
                 let (pl, poffset) = self.prev_leaf()?;
-                c.provide_context(&pl, self.pos() - poffset);
+                c.provide_context(pl, self.pos() - poffset);
             } else if incomp == GraphemeIncomplete::NextChunk {
                 self.set(pos);
                 let (nl, noffset) = self.next_leaf()?;
@@ -695,7 +695,7 @@ impl<'a> Cursor<'a, RopeInfo> {
             } else {
                 return None;
             }
-            next_boundary = c.next_boundary(&l, leaf_offset);
+            next_boundary = c.next_boundary(l, leaf_offset);
         }
         next_boundary.unwrap_or(None)
     }
@@ -709,11 +709,11 @@ impl<'a> Cursor<'a, RopeInfo> {
         }
         let mut leaf_offset = pos - offset;
         let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
-        let mut prev_boundary = c.prev_boundary(&l, leaf_offset);
+        let mut prev_boundary = c.prev_boundary(l, leaf_offset);
         while let Err(incomp) = prev_boundary {
             if let GraphemeIncomplete::PreContext(_) = incomp {
                 let (pl, poffset) = self.prev_leaf()?;
-                c.provide_context(&pl, self.pos() - poffset);
+                c.provide_context(pl, self.pos() - poffset);
             } else if incomp == GraphemeIncomplete::PrevChunk {
                 self.set(pos);
                 let (pl, poffset) = self.prev_leaf()?;
@@ -723,7 +723,7 @@ impl<'a> Cursor<'a, RopeInfo> {
             } else {
                 return None;
             }
-            prev_boundary = c.prev_boundary(&l, leaf_offset);
+            prev_boundary = c.prev_boundary(l, leaf_offset);
         }
         prev_boundary.unwrap_or(None)
     }
@@ -980,10 +980,7 @@ mod tests {
         let s1 = "\u{1f1fa}\u{1f1f8}".repeat(100);
         let a = Rope::concat(
             Rope::from(s1.clone()),
-            Rope::concat(
-                Rope::from(String::from(s1.clone()) + "\u{1f1fa}"),
-                Rope::from(s1.clone()),
-            ),
+            Rope::concat(Rope::from(s1.clone() + "\u{1f1fa}"), Rope::from(s1.clone())),
         );
         for i in 1..(s1.len() * 3) {
             assert_eq!(Some((i - 1) / 8 * 8), a.prev_grapheme_offset(i));
@@ -1027,6 +1024,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::eq_op)]
     fn eq_small() {
         let a = Rope::from("a");
         let a2 = Rope::from("a");
@@ -1057,8 +1055,8 @@ mod tests {
         let a_rope = Rope::from(&a);
         let b_rope = Rope::from(&b);
         assert!(r != a_rope);
-        assert!(r.clone().slice(..a.len()) == a_rope);
-        assert!(r.clone().slice(a.len()..) == b_rope);
+        assert!(r.slice(..a.len()) == a_rope);
+        assert!(r.slice(a.len()..) == b_rope);
         assert!(r == a_rope.clone() + b_rope.clone());
         assert!(r != b_rope + a_rope);
     }

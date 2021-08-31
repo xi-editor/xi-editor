@@ -298,7 +298,7 @@ mod tests {
     fn concat() {
         let left = gen(1);
         let right = gen(1);
-        let node = Node::concat(left.clone(), right);
+        let node = Node::concat(left, right);
         assert_eq!(node.len(), 20);
         let mut c = Cursor::new(&node, 0);
         assert_eq!(10, c.next::<BreaksMetric>().unwrap());

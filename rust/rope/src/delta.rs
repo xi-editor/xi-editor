@@ -643,7 +643,7 @@ impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
-        while let Some(elem) = self.els_iter.next() {
+        for elem in &mut self.els_iter {
             match *elem {
                 DeltaElement::Copy(b, e) => {
                     self.pos += e - b;
@@ -673,7 +673,7 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
-        while let Some(elem) = self.els_iter.next() {
+        for elem in &mut self.els_iter {
             match *elem {
                 DeltaElement::Copy(b, e) => {
                     if b > self.last_end {
@@ -706,7 +706,7 @@ mod tests {
     use crate::rope::{Rope, RopeInfo};
     use crate::test_helpers::find_deletions;
 
-    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const TEST_STR: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     #[test]
     fn simple() {
@@ -889,7 +889,7 @@ mod serde_tests {
     use crate::{Delta, Interval};
     use serde_json;
 
-    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const TEST_STR: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     #[test]
     fn delta_serde() {

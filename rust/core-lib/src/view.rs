@@ -415,7 +415,7 @@ impl View {
         for &region in self.sel_regions() {
             sel.add_region(region);
             let new_region =
-                region_movement(movement, region, self, self.scroll_height(), &text, false);
+                region_movement(movement, region, self, self.scroll_height(), text, false);
             sel.add_region(new_region);
         }
         self.set_selection(text, sel);
@@ -537,7 +537,7 @@ impl View {
             if region.is_caret() {
                 selection.add_region(SelRegion::caret(region.max()));
             } else {
-                let mut cursor = Cursor::new(&text, region.min());
+                let mut cursor = Cursor::new(text, region.min());
 
                 while cursor.pos() < region.max() {
                     let sel_start = cursor.pos();
@@ -718,7 +718,7 @@ impl View {
             ix = sel_end as isize;
         }
         for (iv, style) in style_spans.iter() {
-            let style_id = self.get_or_def_style_id(client, styles, &style);
+            let style_id = self.get_or_def_style_id(client, styles, style);
             encoded_styles.push((iv.start() as isize) - ix);
             encoded_styles.push(iv.end() as isize - iv.start() as isize);
             encoded_styles.push(style_id as isize);
@@ -752,11 +752,11 @@ impl View {
         let end_off = self.offset_of_line(text, self.first_line + self.height + 2);
         let visible_range = Interval::new(start_off, end_off);
         let selection_annotations =
-            self.selection.get_annotations(visible_range, &self, text).to_json();
+            self.selection.get_annotations(visible_range, self, text).to_json();
         let find_annotations =
-            self.find.iter().map(|ref f| f.get_annotations(visible_range, &self, text).to_json());
+            self.find.iter().map(|f| f.get_annotations(visible_range, self, text).to_json());
         let plugin_annotations =
-            self.annotations.iter_range(&self, text, visible_range).map(|a| a.to_json());
+            self.annotations.iter_range(self, text, visible_range).map(|a| a.to_json());
 
         let annotations = iter::once(selection_annotations)
             .chain(find_annotations)
@@ -890,7 +890,7 @@ impl View {
     pub fn find_status(&self, text: &Rope, matches_only: bool) -> Vec<FindStatus> {
         self.find
             .iter()
-            .map(|find| find.find_status(&self, text, matches_only))
+            .map(|find| find.find_status(self, text, matches_only))
             .collect::<Vec<FindStatus>>()
     }
 

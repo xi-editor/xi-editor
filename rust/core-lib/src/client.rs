@@ -142,7 +142,7 @@ impl Client {
     }
 
     pub fn def_style(&self, style: &Value) {
-        self.0.send_rpc_notification("def_style", &style)
+        self.0.send_rpc_notification("def_style", style)
     }
 
     pub fn find_status(&self, view_id: ViewId, queries: &Value) {

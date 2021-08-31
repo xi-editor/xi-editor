@@ -113,7 +113,7 @@ pub fn delete_backward(base: &Rope, regions: &[SelRegion], config: &BufferItems)
     // could be improved by implementing a "backspace" movement instead.
     let mut builder = DeltaBuilder::new(base.len());
     for region in regions {
-        let start = offset_for_delete_backwards(&region, base, &config);
+        let start = offset_for_delete_backwards(region, base, config);
         let iv = Interval::new(start, region.max());
         if !iv.is_empty() {
             builder.delete(iv);

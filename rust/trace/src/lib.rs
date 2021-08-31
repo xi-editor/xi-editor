@@ -104,7 +104,7 @@ impl PartialEq for CategoriesT {
                 CategoriesT::DynamicArray(ref other_arr) => self_arr.arr_eq(other_arr),
             },
             CategoriesT::DynamicArray(ref self_arr) => match *other {
-                CategoriesT::StaticArray(ref other_arr) => self_arr.arr_eq(other_arr),
+                CategoriesT::StaticArray(other_arr) => self_arr.arr_eq(other_arr),
                 CategoriesT::DynamicArray(ref other_arr) => self_arr.eq(other_arr),
             },
         }
@@ -153,7 +153,7 @@ impl<'de> serde::Deserialize<'de> for CategoriesT {
 impl CategoriesT {
     pub fn join(&self, sep: &str) -> String {
         match *self {
-            CategoriesT::StaticArray(ref arr) => arr.join(sep),
+            CategoriesT::StaticArray(arr) => arr.join(sep),
             CategoriesT::DynamicArray(ref vec) => vec.join(sep),
         }
     }
@@ -423,7 +423,7 @@ where
 impl Sample {
     fn thread_name() -> Option<StrCow> {
         let thread = std::thread::current();
-        thread.name().map(|ref s| to_cow_str((*s).to_string()))
+        thread.name().map(|s| to_cow_str((*s).to_string()))
     }
 
     /// Constructs a Begin or End sample.  Should not be used directly.  Instead
@@ -577,7 +577,7 @@ impl<'a> SampleGuard<'a> {
                 payload,
                 SampleEventType::DurationBegin,
             )),
-            trace: Some(&trace),
+            trace: Some(trace),
         };
         trace.record(guard.sample.as_ref().unwrap().clone());
         guard
@@ -705,7 +705,7 @@ impl Trace {
         if !self.is_enabled() {
             SampleGuard::new_disabled()
         } else {
-            SampleGuard::new(&self, name, categories, None)
+            SampleGuard::new(self, name, categories, None)
         }
     }
 
@@ -718,7 +718,7 @@ impl Trace {
         if !self.is_enabled() {
             SampleGuard::new_disabled()
         } else {
-            SampleGuard::new(&self, name, categories, Some(payload.into()))
+            SampleGuard::new(self, name, categories, Some(payload.into()))
         }
     }
 
@@ -774,9 +774,8 @@ impl Trace {
         }
 
         let mut as_vec = Vec::with_capacity(all_samples.len() + 10);
-        let first_sample_timestamp = all_samples.front().map_or(0, |ref s| s.timestamp_us);
-        let tid =
-            all_samples.front().map_or_else(|| sys_tid::current_tid().unwrap(), |ref s| s.tid);
+        let first_sample_timestamp = all_samples.front().map_or(0, |s| s.timestamp_us);
+        let tid = all_samples.front().map_or_else(|| sys_tid::current_tid().unwrap(), |s| s.tid);
 
         if let Some(exe_name) = exe_name() {
             as_vec.push(Sample::new_metadata(
