@@ -152,7 +152,7 @@ impl Command {
     {
         let title = title.as_ref().to_owned();
         let description = description.as_ref().to_owned();
-        let args = args.into().unwrap_or_else(Vec::new);
+        let args = args.into().unwrap_or_default();
         Command { title, description, rpc_cmd, args }
     }
 }
