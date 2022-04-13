@@ -1,5 +1,5 @@
 source 'https://rubygems.org'
 
-gem 'github-pages', "~> 209", group: :jekyll_plugins
-gem 'therubyracer'
+gem 'github-pages'
 gem 'octopress-autoprefixer'
+#gem 'therubyracer' # what did this do? noone knows
