@@ -32,7 +32,7 @@ pub(crate) fn markdown_from_hover_contents(
     let res = match hover_contents {
         HoverContents::Scalar(content) => marked_string_to_string(&content),
         HoverContents::Array(content) => {
-            let res: Vec<String> = content.iter().map(|c| marked_string_to_string(c)).collect();
+            let res: Vec<String> = content.iter().map(marked_string_to_string).collect();
             res.join("\n")
         }
         HoverContents::Markup(content) => content.value,

@@ -229,7 +229,7 @@ impl<'a> PluginState {
     pub fn indent_lines(&mut self, view: &mut MyView, syntax_set: &SyntaxSet) {
         let mut builder = DeltaBuilder::new(view.get_buf_size());
 
-        for indentation_task in self.indentation_state.to_vec() {
+        for indentation_task in self.indentation_state.clone() {
             match indentation_task {
                 IndentationTask::Newline(line) => self
                     .autoindent_line(view, &mut builder, syntax_set, line)
