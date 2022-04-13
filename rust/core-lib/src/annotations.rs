@@ -152,11 +152,7 @@ impl AnnotationStore {
 
     /// Invalidates and removes all annotations in the range of the interval.
     pub fn invalidate(&mut self, interval: Interval) {
-        self.store
-            .values_mut()
-            .map(|v| v.iter_mut())
-            .flatten()
-            .for_each(|a| a.invalidate(interval));
+        self.store.values_mut().flat_map(|v| v.iter_mut()).for_each(|a| a.invalidate(interval));
     }
 
     /// Applies an update from a plugin to a set of annotations

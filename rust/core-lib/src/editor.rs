@@ -425,10 +425,9 @@ impl Editor {
                 view.do_find_next(&self.text, false, true, true, &SelectionModifier::Set);
             }
 
-            match last_selection_region(view.sel_regions()) {
-                Some(_) => self.add_delta(edit_ops::insert(&self.text, view.sel_regions(), chars)),
-                None => return,
-            };
+            if last_selection_region(view.sel_regions()).is_some() {
+                self.add_delta(edit_ops::insert(&self.text, view.sel_regions(), chars));
+            }
         }
     }
 
