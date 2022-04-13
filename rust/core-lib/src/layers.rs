@@ -38,6 +38,7 @@ pub struct Layers {
 }
 
 /// A collection of scope spans from a single source.
+#[derive(Default)]
 pub struct ScopeLayer {
     stack_lookup: Vec<Vec<Scope>>,
     style_lookup: Vec<Style>,
@@ -164,18 +165,6 @@ impl Layers {
             self.layers.insert(layer_id, ScopeLayer::new(self.merged.len()));
         }
         Ok(())
-    }
-}
-
-impl Default for ScopeLayer {
-    fn default() -> Self {
-        ScopeLayer {
-            stack_lookup: Vec::new(),
-            style_lookup: Vec::new(),
-            style_cache: HashMap::new(),
-            scope_spans: Spans::default(),
-            style_spans: Spans::default(),
-        }
     }
 }
 
