@@ -1136,7 +1136,7 @@ mod tests {
     #[test]
     fn test_disable_drops_all_samples() {
         let trace = Trace::enabled(Config::with_limit_count(10));
-        assert_eq!(trace.is_enabled(), true);
+        assert!(trace.is_enabled());
         trace.instant("1", &["test"]);
         trace.instant("2", &["test"]);
         trace.instant("3", &["test"]);
@@ -1154,7 +1154,7 @@ mod tests {
         let trace = Trace::enabled(Config::with_limit_count(20));
         assert_eq!(trace.samples_cloned_unsorted().len(), 0);
 
-        assert_eq!(trace.is_enabled(), true);
+        assert!(trace.is_enabled());
         assert_eq!(trace.get_samples_limit(), 20);
         assert_eq!(trace.samples_cloned_unsorted().len(), 0);
 
@@ -1175,9 +1175,9 @@ mod tests {
         assert_eq!(snapshot.len(), 5);
 
         assert_eq!(snapshot[0].name, "process_name");
-        assert_eq!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some());
         assert_eq!(snapshot[1].name, "thread_name");
-        assert_eq!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some());
         assert_eq!(snapshot[2].name, "x");
         assert_eq!(snapshot[3].name, "y");
         assert_eq!(snapshot[4].name, "z");
@@ -1201,7 +1201,7 @@ mod tests {
     #[test]
     fn test_get_samples_nested_trace() {
         let trace = Trace::enabled(Config::with_limit_count(11));
-        assert_eq!(trace.is_enabled(), true);
+        assert!(trace.is_enabled());
         assert_eq!(trace.get_samples_limit(), 11);
 
         // current recording mechanism should see:
@@ -1225,9 +1225,9 @@ mod tests {
         assert_eq!(snapshot.len(), 9);
 
         assert_eq!(snapshot[0].name, "process_name");
-        assert_eq!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some());
         assert_eq!(snapshot[1].name, "thread_name");
-        assert_eq!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some());
         assert_eq!(snapshot[2].name, "a");
         assert_eq!(snapshot[3].name, "b");
         assert_eq!(snapshot[4].name, "y");
@@ -1269,9 +1269,9 @@ mod tests {
         assert_eq!(snapshot.len(), 9);
 
         assert_eq!(snapshot[0].name, "process_name");
-        assert_eq!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some());
         assert_eq!(snapshot[1].name, "thread_name");
-        assert_eq!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some());
         assert_eq!(snapshot[2].name, "x");
         assert_eq!(snapshot[3].name, "a");
         assert_eq!(snapshot[4].name, "y");

@@ -77,10 +77,11 @@ enum ChromeTraceArrayEntries {
 /// details of any error that occured.
 ///
 /// # Examples
-/// ```norun
+/// ```no_run
+/// # use xi_trace::chrome_trace_dump::serialize;
 /// let samples = xi_trace::samples_cloned_sorted();
 /// let mut serialized = Vec::<u8>::new();
-/// serialize(samples.iter(), serialized);
+/// serialize(&samples, &mut serialized);
 /// ```
 pub fn serialize<W>(samples: &Vec<Sample>, output: W) -> Result<(), Error>
 where
