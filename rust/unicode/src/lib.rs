@@ -17,10 +17,12 @@
 
 extern crate alloc;
 
+mod emoji;
 mod tables;
 
 use core::cmp::Ordering;
 
+use crate::emoji::*;
 use crate::tables::*;
 
 /// The Unicode line breaking property of the given code point.
