@@ -151,6 +151,7 @@ pub struct LineBreakLeafIter {
     state: u8,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for LineBreakLeafIter {
     // A default value. No guarantees on what happens when next() is called
     // on this. Intended to be useful for empty ropes.
