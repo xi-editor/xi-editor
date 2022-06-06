@@ -220,6 +220,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-channel"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b153fe7cbef478c567df0f972e02e6d736db11affe43dfc9c56a9374d1adfb87"
+dependencies = [
+ "crossbeam-utils 0.7.2",
+ "maybe-uninit",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -627,7 +637,7 @@ dependencies = [
  "anymap",
  "bitflags",
  "chashmap",
- "crossbeam-channel",
+ "crossbeam-channel 0.3.9",
  "filetime",
  "fsevent",
  "fsevent-sys",
@@ -1339,7 +1349,7 @@ dependencies = [
 name = "xi-core-lib"
 version = "0.4.0"
 dependencies = [
- "crossbeam-channel",
+ "crossbeam-channel 0.4.4",
  "log",
  "memchr",
  "notify",
