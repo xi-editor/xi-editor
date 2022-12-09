@@ -1,16 +1,6 @@
-<h1 align="center">
-  <a href="https://github.com/xi-editor/xi-editor"><img src="icons/xi-editor.png" alt="Xi Editor" width="256" height="256"/></a><br>
-  <a href="https://github.com/xi-editor/xi-editor">Xi Editor</a>
-</h1>
+# Xi editor
 
-<p align="center"><em>(pronounced "Zigh")</em></p>
-
-<h4 align="center">A modern editor with a backend written in Rust.</h4>
-
-***Maintenance status:*** *The xi-editor project is not currently under active
-development. Although we will happily accept bug fixes, no new features are
-currently planned. We would like to revisit writing a text editor again at
-some point in the future, but for the time being our attention is elsewhere.*
+***Maintenance status:*** *The xi-editor project is currently discontinued. Although we will happily accept bug fixes, no new features are currently planned. You may be interesting [the Lapce editor](https://github.com/lapce/lapce), which can be considered a spiritual successor to the xi-editor.
 — The Editors
 
 ***Note:*** *This repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#frontends).*
