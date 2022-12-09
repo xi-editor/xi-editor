@@ -1,6 +1,6 @@
 # Xi editor
 
-***Maintenance status:*** *The xi-editor project is currently discontinued. Although we will happily accept bug fixes, no new features are currently planned. You may be interesting [the Lapce editor](https://github.com/lapce/lapce), which can be considered a spiritual successor to the xi-editor.
+***Maintenance status:*** *The xi-editor project is currently discontinued. Although we will happily accept bug fixes, no new features are currently planned. You may be interested in [the Lapce editor](https://github.com/lapce/lapce), which can be considered a spiritual successor to the xi-editor.
 — The Editors
 
 ***Note:*** *This repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#frontends).*
