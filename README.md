@@ -74,6 +74,8 @@ Here are some front-ends in various stages of development:
 
 * [vixi](https://github.com/Peltoche/vixi), a Vim like front-end in Rust.
 
+* [Lapce](https://github.com/lapce/lapce), a fast cross-platform code editor written in Rust.
+
 The following are currently inactive, based on earlier versions of the front-end
 protocol, but perhaps could be revitalized:
 
