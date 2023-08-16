@@ -18,22 +18,21 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::time::SystemTime;
+#[cfg(target_family = "unix")]
+use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 
 use xi_rope::Rope;
 use xi_rpc::RemoteError;
 
 use crate::tabs::BufferId;
-
 #[cfg(feature = "notify")]
-use crate::tabs::OPEN_FILE_EVENT_TOKEN;
+use crate::tabs::{OPEN_FILE_EVENT_TOKEN, OPEN_FILE_TAIL_EVENT_TOKEN};
 #[cfg(feature = "notify")]
 use crate::watcher::FileWatcher;
-#[cfg(target_family = "unix")]
-use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 
 const UTF8_BOM: &str = "\u{feff}";
 
@@ -54,6 +53,8 @@ pub struct FileInfo {
     pub has_changed: bool,
     #[cfg(target_family = "unix")]
     pub permissions: Option<u32>,
+    #[cfg(feature = "notify")]
+    pub tail_position: Option<u64>,
 }
 
 pub enum FileError {
@@ -105,6 +106,17 @@ impl FileManager {
         false
     }
 
+    pub fn tail(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
+        if !path.exists() {
+            return Ok(Rope::from(""));
+        }
+
+        let existing_file_info = self.file_info.get(&id).expect("File info must be present");
+        let (rope, info) = try_tailing_file(path, existing_file_info)?;
+        self.file_info.insert(id, info);
+        Ok(rope)
+    }
+
     pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
         if !path.exists() {
             return Ok(Rope::from(""));
@@ -125,6 +137,8 @@ impl FileManager {
             self.open_files.remove(&info.path);
             #[cfg(feature = "notify")]
             self.watcher.unwatch(&info.path, OPEN_FILE_EVENT_TOKEN);
+            #[cfg(feature = "notify")]
+            self.watcher.unwatch(&info.path, OPEN_FILE_TAIL_EVENT_TOKEN);
         }
     }
 
@@ -147,6 +161,8 @@ impl FileManager {
             has_changed: false,
             #[cfg(target_family = "unix")]
             permissions: get_permissions(path),
+            #[cfg(feature = "notify")]
+            tail_position: None,
         };
         self.open_files.insert(path.to_owned(), id);
         self.file_info.insert(id, info);
@@ -162,6 +178,8 @@ impl FileManager {
             self.open_files.remove(&prev_path);
             #[cfg(feature = "notify")]
             self.watcher.unwatch(&prev_path, OPEN_FILE_EVENT_TOKEN);
+            #[cfg(feature = "notify")]
+            self.watcher.unwatch(&prev_path, OPEN_FILE_TAIL_EVENT_TOKEN);
         } else if self.file_info[&id].has_changed {
             return Err(FileError::HasChanged(path.to_owned()));
         } else {
@@ -172,6 +190,79 @@ impl FileManager {
         }
         Ok(())
     }
+
+    #[cfg(feature = "notify")]
+    pub fn update_current_position_in_tail(
+        &mut self,
+        buffer_id: BufferId,
+    ) -> Result<bool, FileError> {
+        if let Some(file_info) = self.file_info.get_mut(&buffer_id) {
+            let path = &file_info.path.to_owned();
+
+            let mut f = File::open(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
+            let end_position =
+                f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
+
+            file_info.tail_position = Some(end_position);
+            self.watcher.unwatch(path, OPEN_FILE_EVENT_TOKEN);
+            self.watcher.watch(path, false, OPEN_FILE_TAIL_EVENT_TOKEN);
+            Ok(true)
+        } else {
+            info!("Non-existent file cannot be tailed!");
+            Ok(false)
+        }
+    }
+
+    #[cfg(feature = "notify")]
+    pub fn disable_tailing(&mut self, buffer_id: BufferId) -> bool {
+        if let Some(file_info) = self.file_info.get_mut(&buffer_id) {
+            let path = &file_info.path.to_owned();
+            file_info.tail_position = None;
+            self.watcher.unwatch(path, OPEN_FILE_TAIL_EVENT_TOKEN);
+            self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
+            true
+        } else {
+            info!("Non-existent file cannot be tailed!");
+            false
+        }
+    }
+}
+
+/// When tailing a file, instead of reading file from beginning, we need to get changes from the end.
+/// This method does that.
+#[cfg(feature = "notify")]
+fn try_tailing_file<P>(path: P, file_info: &FileInfo) -> Result<(Rope, FileInfo), FileError>
+where
+    P: AsRef<Path>,
+{
+    let mut f =
+        File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let end_position =
+        f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+
+    let current_position = file_info.tail_position.expect(
+        "tail_position is None. Since we are tailing a file, tail_position cannot be None.",
+    );
+    let diff = end_position - current_position;
+    let mut buf = vec![0; diff as usize];
+    f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
+    f.read_exact(&mut buf).unwrap();
+
+    let mod_time =
+        f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+
+    let encoding = file_info.encoding;
+    let permissions = file_info.permissions;
+    let rope = try_decode(buf, encoding, path.as_ref())?;
+    let info = FileInfo {
+        encoding,
+        mod_time,
+        path: path.as_ref().to_owned(),
+        has_changed: false,
+        permissions,
+        tail_position: Some(end_position),
+    };
+    Ok((rope, info))
 }
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
@@ -194,6 +285,8 @@ where
         permissions: get_permissions(&path),
         path: path.as_ref().to_owned(),
         has_changed: false,
+        #[cfg(feature = "notify")]
+        tail_position: None,
     };
     Ok((rope, info))
 }

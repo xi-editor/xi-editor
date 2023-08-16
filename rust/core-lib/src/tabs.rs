@@ -21,12 +21,16 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
+#[cfg(feature = "notify")]
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
 use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "notify")]
+use notify::Event;
 use serde::de::{self, Deserialize, Deserializer, Unexpected};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
@@ -52,16 +56,11 @@ use crate::rpc::{
 use crate::styles::{ThemeStyleMap, DEFAULT_THEME};
 use crate::syntax::LanguageId;
 use crate::view::View;
+#[cfg(feature = "notify")]
+use crate::watcher::{FileWatcher, WatchToken};
 use crate::whitespace::Indentation;
 use crate::width_cache::WidthCache;
 use crate::WeakXiCore;
-
-#[cfg(feature = "notify")]
-use crate::watcher::{FileWatcher, WatchToken};
-#[cfg(feature = "notify")]
-use notify::Event;
-#[cfg(feature = "notify")]
-use std::ffi::OsStr;
 
 /// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.
@@ -99,6 +98,9 @@ const THEME_FILE_EVENT_TOKEN: WatchToken = WatchToken(3);
 
 #[cfg(feature = "notify")]
 const PLUGIN_EVENT_TOKEN: WatchToken = WatchToken(4);
+
+#[cfg(feature = "notify")]
+pub const OPEN_FILE_TAIL_EVENT_TOKEN: WatchToken = WatchToken(5);
 
 #[allow(dead_code)]
 pub struct CoreState {
@@ -331,6 +333,7 @@ impl CoreState {
             // handled at the top level
             ClientStarted { .. } => (),
             SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
+            ToggleTail { view_id, enabled } => self.do_toggle_tail(view_id, enabled),
         }
     }
 
@@ -555,6 +558,42 @@ impl CoreState {
     fn after_stop_plugin(&mut self, plugin: &Plugin) {
         self.iter_groups().for_each(|mut cx| cx.plugin_stopped(plugin));
     }
+
+    #[cfg(feature = "notify")]
+    fn do_toggle_tail(&mut self, view_id: ViewId, enabled: bool) {
+        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().get_buffer_id());
+        let buffer_id = match buffer_id {
+            Some(id) => id,
+            None => return,
+        };
+        if enabled {
+            if let Ok(updated) = self.file_manager.update_current_position_in_tail(buffer_id) {
+                if updated {
+                    if let Some(f) = self.views.get(&view_id) {
+                        f.borrow_mut().set_tail_enabled(true)
+                    }
+                    if let Some(mut ctx) = self.make_context(view_id) {
+                        ctx.set_toggle_tail(true);
+                    }
+                }
+            }
+        } else {
+            let updated = self.file_manager.disable_tailing(buffer_id);
+            if updated {
+                if let Some(f) = self.views.get(&view_id) {
+                    f.borrow_mut().set_tail_enabled(false)
+                }
+                if let Some(mut ctx) = self.make_context(view_id) {
+                    ctx.set_toggle_tail(false);
+                }
+            }
+        }
+    }
+
+    #[cfg(not(feature = "notify"))]
+    fn do_toggle_tail(&mut self, view_id: ViewId, enabled: bool) {
+        warn!("do_toggle_tail called without notify feature enabled.");
+    }
 }
 
 /// Idle, tracing, and file event handling
@@ -693,6 +732,7 @@ impl CoreState {
                 CONFIG_EVENT_TOKEN => self.handle_config_fs_event(event),
                 THEME_FILE_EVENT_TOKEN => self.handle_themes_fs_event(event),
                 PLUGIN_EVENT_TOKEN => self.handle_plugin_fs_event(event),
+                OPEN_FILE_TAIL_EVENT_TOKEN => self.handle_open_file_tail_fs_event(event),
                 _ => warn!("unexpected fs event token {:?}", token),
             }
         }
@@ -708,7 +748,21 @@ impl CoreState {
         let path = match event.kind {
             EventKind::Create(CreateKind::Any)
             | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any))
-            | EventKind::Modify(ModifyKind::Any) => &event.paths[0],
+            | EventKind::Modify(ModifyKind::Any)
+                if event.flag().is_none() =>
+            {
+                &event.paths[0]
+            }
+            EventKind::Modify(ModifyKind::Any) if event.flag().is_some() => {
+                let flag_kind = event.flag().unwrap();
+
+                if Flag::Ongoing.eq(flag_kind) {
+                    debug!("Tail events will be handled by handle_open_file_tail_fs_event()");
+                    return;
+                } else {
+                    &event.paths[0]
+                }
+            }
             other => {
                 debug!("Ignoring event in open file {:?}", other);
                 return;
@@ -737,6 +791,41 @@ impl CoreState {
                     .map(|v| v.borrow().get_view_id())
                     .unwrap();
                 self.make_context(view_id).unwrap().reload(text);
+            }
+        }
+    }
+
+    #[cfg(feature = "notify")]
+    fn handle_open_file_tail_fs_event(&mut self, event: Event) {
+        use notify::event::*;
+
+        let path = match event.kind {
+            EventKind::Modify(ModifyKind::Any) => &event.paths[0],
+            other => {
+                debug!("Ignoring event in open file {:?}", other);
+                return;
+            }
+        };
+
+        let buffer_id = match self.file_manager.get_editor(path) {
+            Some(id) => id,
+            None => return,
+        };
+
+        let has_changes = self.file_manager.check_file(path, buffer_id);
+        let is_pristine = self.editors.get(&buffer_id).map(|ed| ed.borrow().is_pristine()).unwrap();
+
+        if has_changes && is_pristine {
+            // Since this is tail event, we need to get delta since the last time we
+            // read the file.
+            if let Ok(delta) = self.file_manager.tail(path, buffer_id) {
+                let view_id = self
+                    .views
+                    .values()
+                    .find(|v| v.borrow().get_buffer_id() == buffer_id)
+                    .map(|v| v.borrow().get_view_id())
+                    .unwrap();
+                self.make_context(view_id).unwrap().reload_tail(delta);
             }
         }
     }
